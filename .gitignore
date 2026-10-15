@@ -1,0 +1,28 @@
+# Go
+backend/*/tmp/
+backend/*/*.exe
+backend/*/vendor/
+backend/**/.env
+
+# Node
+frontend/*/node_modules/
+frontend/*/.next/
+frontend/*/.nuxt/
+frontend/*/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Docker
+.env
+!.env.example

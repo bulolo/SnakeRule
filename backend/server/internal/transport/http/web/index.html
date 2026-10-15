@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>SnakeRule · 规则引擎</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="SnakeRule 首页"><span class="brand-mark">S</span><span>SnakeRule</span></a>
+    <span class="topbar-note">规则管理 · 决策调试</span>
+    <span class="status"><i></i>引擎运行中</span>
+  </header>
+  <main class="layout">
+    <section class="intro">
+      <div><div class="eyebrow">RULE ENGINE · MVP</div><h1>规则工作台</h1><p>编写规则集，输入事实数据，即时查看命中结果。</p></div>
+      <button id="new-rule" class="button button-light" type="button">＋ 新规则集</button>
+    </section>
+    <section class="toolbar panel">
+      <label for="ruleset-picker">当前规则集</label>
+      <select id="ruleset-picker" aria-label="选择规则集"></select>
+      <button id="refresh" class="button button-quiet" type="button">刷新列表</button>
+      <span id="save-state" class="save-state">内存模式 · 重启后数据会重置</span>
+    </section>
+    <div class="workspace">
+      <section class="panel editor-panel">
+        <div class="panel-heading"><div><div class="eyebrow">01 · RULESET</div><h2>规则集定义</h2></div><span class="format-pill">JSON DSL</span></div>
+        <p class="helper">条件支持 all / any / not 嵌套。当前动作作为命中结果返回。</p>
+        <label class="sr-only" for="ruleset-json">规则集 JSON</label>
+        <textarea id="ruleset-json" spellcheck="false" aria-label="规则集 JSON"></textarea>
+        <div class="editor-footer"><span id="editor-error" class="error" role="alert"></span><button id="save" class="button button-primary" type="button">保存规则集</button></div>
+      </section>
+      <section class="panel evaluate-panel">
+        <div class="panel-heading"><div><div class="eyebrow">02 · EVALUATE</div><h2>试运行决策</h2></div><span class="latency-hint">同步执行</span></div>
+        <p class="helper">提供本次决策的 facts，字段路径使用点号访问。</p>
+        <label class="field-label" for="facts-json">输入事实（Facts）</label>
+        <textarea id="facts-json" class="facts-editor" spellcheck="false" aria-label="输入事实数据"></textarea>
+        <div class="editor-footer"><span id="run-error" class="error" role="alert"></span><button id="evaluate" class="button button-primary" type="button">运行决策 →</button></div>
+        <div class="result-wrap"><div class="result-title"><span>决策结果</span><span id="result-badge" class="result-badge">等待运行</span></div><pre id="result" class="result"><span class="muted">运行后将在这里显示命中规则。</span></pre></div>
+      </section>
+    </div>
+    <section class="panel rules-list-panel"><div class="panel-heading"><div><div class="eyebrow">LIBRARY</div><h2>规则集</h2></div><span id="ruleset-count" class="count-pill">0 个</span></div><div id="ruleset-list" class="ruleset-list"></div></section>
+    <footer>SnakeRule <span>·</span> 确定性规则求值 <span>·</span> API 与界面同源运行</footer>
+  </main>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
