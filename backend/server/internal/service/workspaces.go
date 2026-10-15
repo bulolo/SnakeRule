@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/szplanner/snakerule/internal/domain"
 	"github.com/szplanner/snakerule/internal/repo"
 )
 
-type Workspaces struct{ repository repo.WorkspaceRepository }
+type Workspaces struct {
+	mu         sync.Mutex
+	repository repo.WorkspaceRepository
+}
 
 var workspaceSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 
@@ -45,6 +49,8 @@ func (s *Workspaces) Create(ctx context.Context, name, slug, description string)
 	if !workspaceSlugPattern.MatchString(slug) {
 		return domain.Workspace{}, fmt.Errorf("%w: slug must use 1 to 32 lowercase letters, digits, hyphens or underscores", ErrInvalid)
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := s.ensureSlugAvailable(ctx, slug, ""); err != nil {
 		return domain.Workspace{}, err
 	}
@@ -61,6 +67,8 @@ func (s *Workspaces) Update(ctx context.Context, id, name, slug, description str
 	if name == "" || len([]rune(name)) > 80 {
 		return domain.Workspace{}, fmt.Errorf("%w: workspace name must contain 1 to 80 characters", ErrInvalid)
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	item, err := s.repository.Get(ctx, id)
 	if err != nil {
 		return domain.Workspace{}, err
@@ -99,5 +107,7 @@ func (s *Workspaces) ensureSlugAvailable(ctx context.Context, slug, exceptID str
 }
 
 func (s *Workspaces) Delete(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.repository.Delete(ctx, id)
 }

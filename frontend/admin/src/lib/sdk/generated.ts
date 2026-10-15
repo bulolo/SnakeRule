@@ -72,6 +72,7 @@ export interface RulesetList {
 export interface EvaluateRequest {
   rulesetId: string;
   facts: Record<string, JSONValue>;
+  ruleset?: Ruleset;
 }
 
 export interface MatchedRule {

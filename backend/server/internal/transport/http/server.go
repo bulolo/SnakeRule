@@ -105,8 +105,9 @@ func (s *Server) saveRuleset(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) evaluate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		RulesetID string         `json:"rulesetId"`
-		Facts     map[string]any `json:"facts"`
+		RulesetID string          `json:"rulesetId"`
+		Facts     map[string]any  `json:"facts"`
+		Ruleset   *domain.Ruleset `json:"ruleset,omitempty"`
 	}
 	if err := decodeBody(w, r, &req); err != nil {
 		writeError(w, 400, err)
@@ -116,7 +117,17 @@ func (s *Server) evaluate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, errors.New("rulesetId is required"))
 		return
 	}
-	decision, err := s.engine.Evaluate(r.Context(), req.RulesetID, req.Facts)
+	var decision domain.Decision
+	var err error
+	if req.Ruleset != nil {
+		if req.Ruleset.ID != req.RulesetID {
+			writeError(w, http.StatusBadRequest, errors.New("rulesetId must match ruleset.id"))
+			return
+		}
+		decision, err = s.engine.EvaluateDraft(*req.Ruleset, req.Facts)
+	} else {
+		decision, err = s.engine.Evaluate(r.Context(), req.RulesetID, req.Facts)
+	}
 	if err != nil {
 		s.writeServiceError(w, err)
 		return

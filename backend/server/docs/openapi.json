@@ -626,6 +626,9 @@
           "facts": {
             "type": "object",
             "additionalProperties": true
+          },
+          "ruleset": {
+            "$ref": "#/components/schemas/Ruleset"
           }
         }
       },

@@ -59,8 +59,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := base64.RawURLEncoding.EncodeToString(bytes)
-	expires := time.Now().Add(s.sessions.ttl)
+	now := time.Now()
+	expires := now.Add(s.sessions.ttl)
 	s.sessions.mu.Lock()
+	for existingToken, existingSession := range s.sessions.sessions {
+		if !existingSession.expiresAt.After(now) {
+			delete(s.sessions.sessions, existingToken)
+		}
+	}
 	s.sessions.sessions[token] = session{expiresAt: expires, workspaceID: repo.DefaultWorkspaceID}
 	s.sessions.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{

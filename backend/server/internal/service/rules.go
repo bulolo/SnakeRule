@@ -25,8 +25,16 @@ func (s *Rulesets) Get(ctx context.Context, id string) (domain.Ruleset, error) {
 }
 func (s *Rulesets) Delete(ctx context.Context, id string) error { return s.repository.Delete(ctx, id) }
 func (s *Rulesets) Save(ctx context.Context, item domain.Ruleset) error {
+	item, err := NormalizeRuleset(item)
+	if err != nil {
+		return err
+	}
+	return s.repository.Save(ctx, item)
+}
+
+func NormalizeRuleset(item domain.Ruleset) (domain.Ruleset, error) {
 	if strings.TrimSpace(item.ID) == "" || strings.TrimSpace(item.Name) == "" {
-		return fmt.Errorf("%w: ruleset id and name are required", ErrInvalid)
+		return domain.Ruleset{}, fmt.Errorf("%w: ruleset id and name are required", ErrInvalid)
 	}
 	if item.Version == "" {
 		item.Version = "1.0.0"
@@ -35,18 +43,18 @@ func (s *Rulesets) Save(ctx context.Context, item domain.Ruleset) error {
 	for i := range item.Rules {
 		rule := &item.Rules[i]
 		if strings.TrimSpace(rule.ID) == "" || strings.TrimSpace(rule.Name) == "" {
-			return fmt.Errorf("%w: rule id and name are required", ErrInvalid)
+			return domain.Ruleset{}, fmt.Errorf("%w: rule id and name are required", ErrInvalid)
 		}
 		if _, exists := ids[rule.ID]; exists {
-			return fmt.Errorf("%w: duplicate rule id %q", ErrInvalid, rule.ID)
+			return domain.Ruleset{}, fmt.Errorf("%w: duplicate rule id %q", ErrInvalid, rule.ID)
 		}
 		ids[rule.ID] = struct{}{}
 		if err := evaluator.Validate(rule.Conditions); err != nil {
-			return fmt.Errorf("%w: rule %q: %v", ErrInvalid, rule.ID, err)
+			return domain.Ruleset{}, fmt.Errorf("%w: rule %q: %v", ErrInvalid, rule.ID, err)
 		}
 	}
 	sort.SliceStable(item.Rules, func(i, j int) bool { return item.Rules[i].Priority > item.Rules[j].Priority })
-	return s.repository.Save(ctx, item)
+	return item, nil
 }
 
 type Engine struct{ rulesets repo.RulesetRepository }
@@ -57,6 +65,18 @@ func (s *Engine) Evaluate(ctx context.Context, id string, facts map[string]any) 
 	if err != nil {
 		return domain.Decision{}, err
 	}
+	return evaluateRuleset(set, facts)
+}
+
+func (s *Engine) EvaluateDraft(set domain.Ruleset, facts map[string]any) (domain.Decision, error) {
+	set, err := NormalizeRuleset(set)
+	if err != nil {
+		return domain.Decision{}, err
+	}
+	return evaluateRuleset(set, facts)
+}
+
+func evaluateRuleset(set domain.Ruleset, facts map[string]any) (domain.Decision, error) {
 	decision := domain.Decision{RulesetID: set.ID, Version: set.Version, HitRules: []domain.MatchedRule{}}
 	if !set.Enabled {
 		return decision, nil

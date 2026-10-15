@@ -17,9 +17,9 @@
 | `GET` | `/api/v1/rulesets/{id}` | 查看规则集 |
 | `PUT` | `/api/v1/rulesets/{id}` | 更新规则集 |
 | `DELETE` | `/api/v1/rulesets/{id}` | 删除规则集 |
-| `POST` | `/api/v1/engine/evaluate` | 对规则集执行求值 |
+| `POST` | `/api/v1/engine/evaluate` | 求值已保存规则集，或携带 `ruleset` 预览编辑草稿 |
 | `GET` | `/api/v1/platform/license` | 查看授权状态 |
 | `POST` | `/api/v1/platform/license` | 上传并校验授权文件 |
 | `DELETE` | `/api/v1/platform/license` | 清除授权 |
 
-规则管理、工作空间和求值请求要求有效登录会话。规则集按当前会话选择的工作空间隔离；删除工作空间会同时删除其中的规则集。默认工作空间的 slug 固定为 `default`，默认空间和当前空间不能删除。请求与响应字段请以仓库中的 `backend/server/docs/openapi.json` 为准；管理端 TypeScript 客户端可通过 `make gen-sdk` 重新生成。
+规则管理、工作空间和求值请求要求有效登录会话。规则集按当前会话选择的工作空间隔离；删除工作空间会同时删除其中的规则集。默认工作空间的 slug 固定为 `default`，默认空间和当前空间不能删除。求值请求携带 `ruleset` 时会按请求内容校验并运行草稿，不写入规则存储；不携带时按 `rulesetId` 读取已保存规则集。请求与响应字段请以仓库中的 `backend/server/docs/openapi.json` 为准；管理端 TypeScript 客户端可通过 `make gen-sdk` 重新生成。
