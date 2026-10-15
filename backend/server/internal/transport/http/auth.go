@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/szplanner/snakerule/internal/repo"
 )
 
 const sessionCookieName = "snakerule_session"
@@ -22,12 +24,17 @@ type AuthConfig struct {
 
 type sessionStore struct {
 	mu       sync.Mutex
-	sessions map[string]time.Time
+	sessions map[string]session
 	ttl      time.Duration
 }
 
+type session struct {
+	expiresAt   time.Time
+	workspaceID string
+}
+
 func newSessionStore(ttl time.Duration) *sessionStore {
-	return &sessionStore{sessions: make(map[string]time.Time), ttl: ttl}
+	return &sessionStore{sessions: make(map[string]session), ttl: ttl}
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -54,7 +61,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	token := base64.RawURLEncoding.EncodeToString(bytes)
 	expires := time.Now().Add(s.sessions.ttl)
 	s.sessions.mu.Lock()
-	s.sessions.sessions[token] = expires
+	s.sessions.sessions[token] = session{expiresAt: expires, workspaceID: repo.DefaultWorkspaceID}
 	s.sessions.mu.Unlock()
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookieName, Value: token, Path: "/", HttpOnly: true,
@@ -94,14 +101,47 @@ func (s *Server) validSession(r *http.Request) bool {
 	now := time.Now()
 	s.sessions.mu.Lock()
 	defer s.sessions.mu.Unlock()
-	expires, ok := s.sessions.sessions[cookie.Value]
+	current, ok := s.sessions.sessions[cookie.Value]
 	if !ok {
 		return false
 	}
-	if now.After(expires) {
+	if now.After(current.expiresAt) {
 		delete(s.sessions.sessions, cookie.Value)
 		return false
 	}
+	return true
+}
+
+func (s *sessionStore) workspaceID(r *http.Request) string {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return repo.DefaultWorkspaceID
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.sessions[cookie.Value]
+	if !ok || time.Now().After(current.expiresAt) {
+		return repo.DefaultWorkspaceID
+	}
+	if current.workspaceID == "" {
+		return repo.DefaultWorkspaceID
+	}
+	return current.workspaceID
+}
+
+func (s *sessionStore) setWorkspace(r *http.Request, workspaceID string) bool {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.sessions[cookie.Value]
+	if !ok || time.Now().After(current.expiresAt) {
+		return false
+	}
+	current.workspaceID = workspaceID
+	s.sessions[cookie.Value] = current
 	return true
 }
 
@@ -111,6 +151,7 @@ func (s *Server) requireSession(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, errors.New("authentication required"))
 			return
 		}
-		next.ServeHTTP(w, r)
+		ctx := repo.WithWorkspace(r.Context(), s.sessions.workspaceID(r))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

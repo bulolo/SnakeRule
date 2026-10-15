@@ -7,11 +7,19 @@
 | `POST` | `/api/v1/auth/login` | 邮箱和密码登录，设置会话 Cookie |
 | `GET` | `/api/v1/auth/session` | 查询当前会话 |
 | `POST` | `/api/v1/auth/logout` | 退出登录并清除会话 |
+| `GET` | `/api/v1/workspaces` | 列出工作空间并返回当前选择 |
+| `POST` | `/api/v1/workspaces` | 创建工作空间 |
+| `PUT` | `/api/v1/workspaces/active` | 切换当前会话的工作空间 |
+| `PUT` | `/api/v1/workspaces/{id}` | 更新工作空间 |
+| `DELETE` | `/api/v1/workspaces/{id}` | 删除非默认且非当前工作空间 |
 | `GET` | `/api/v1/rulesets` | 列出规则集 |
 | `POST` | `/api/v1/rulesets` | 创建或保存规则集 |
 | `GET` | `/api/v1/rulesets/{id}` | 查看规则集 |
 | `PUT` | `/api/v1/rulesets/{id}` | 更新规则集 |
 | `DELETE` | `/api/v1/rulesets/{id}` | 删除规则集 |
 | `POST` | `/api/v1/engine/evaluate` | 对规则集执行求值 |
+| `GET` | `/api/v1/platform/license` | 查看授权状态 |
+| `POST` | `/api/v1/platform/license` | 上传并校验授权文件 |
+| `DELETE` | `/api/v1/platform/license` | 清除授权 |
 
-规则管理和求值请求要求有效登录会话。请求与响应字段请以仓库中的 `backend/server/docs/openapi.json` 为准；管理端 TypeScript 客户端可通过 `make gen-sdk` 重新生成。
+规则管理、工作空间和求值请求要求有效登录会话。规则集按当前会话选择的工作空间隔离；删除工作空间会同时删除其中的规则集。默认工作空间的 slug 固定为 `default`，默认空间和当前空间不能删除。请求与响应字段请以仓库中的 `backend/server/docs/openapi.json` 为准；管理端 TypeScript 客户端可通过 `make gen-sdk` 重新生成。

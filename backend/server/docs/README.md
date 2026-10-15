@@ -13,7 +13,7 @@ Open `http://localhost:8080` for the React admin. The Go API is available at `ht
 
 ## Authentication
 
-The admin signs in by email through `POST /api/v1/auth/login`. A successful login sets an HttpOnly, SameSite cookie; the browser checks it through `GET /api/v1/auth/session`. `POST /api/v1/auth/logout` revokes the session and clears the cookie. Ruleset CRUD and decision evaluation require a valid session. Configure the super administrator with `AUTH_EMAIL`, `AUTH_NAME`, and `AUTH_PASSWORD` in `backend/.env`; `backend/.env.example` contains a non-secret password placeholder. Production mode rejects that placeholder. Sessions are held in memory and expire after `AUTH_SESSION_TTL` (24 hours by default); restarting the API ends existing sessions. The authenticated session reports `is_superadmin: true`, matching the platform identity field used by OwlAPI; SnakeRule's broader multi-user RBAC is not implemented yet.
+The admin signs in by email through `POST /api/v1/auth/login`. A successful login sets an HttpOnly, SameSite cookie; the browser checks it through `GET /api/v1/auth/session`. `POST /api/v1/auth/logout` revokes the session and clears the cookie. Ruleset CRUD, workspace management, and decision evaluation require a valid session. Configure the super administrator with `AUTH_EMAIL`, `AUTH_NAME`, and `AUTH_PASSWORD` in `backend/.env`; `backend/.env.example` contains a non-secret password placeholder. Production mode rejects that placeholder. Sessions and workspace selections are held in memory and expire after `AUTH_SESSION_TTL` (24 hours by default); restarting the API ends existing sessions. Multi-user RBAC is not implemented yet.
 
 ## API sketch
 
@@ -54,7 +54,7 @@ Evaluate it with `POST /api/v1/engine/evaluate`:
 
 Conditions support recursive `all`, `any`, and `not` groups plus fact operators `equal`, `notEqual`, numeric comparisons, `in`, `notIn`, `contains`, `isNull`, and `isNotNull`. Priority is evaluated from highest to lowest; all matching enabled rules are returned. Actions are currently declarative output only and do not trigger side effects.
 
-The service seeds an `order-risk` demo ruleset at startup. The admin provides a drag-and-drop rule canvas, JSON advanced editing, and simulated decision execution. Saving a rule set from the workbench updates the in-memory store.
+The service seeds an `order-risk` demo ruleset in the default workspace at startup. The admin provides a workspace switcher, workspace CRUD in Platform Settings, a drag-and-drop rule canvas, JSON advanced editing, and simulated decision execution. Rulesets are isolated by the active workspace but stored in memory; restarting the API clears them and resets workspaces to the default workspace.
 
 ## Package boundaries
 

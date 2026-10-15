@@ -19,45 +19,51 @@ type RulesetRepository interface {
 // MemoryRulesetRepository is a development adapter. It is intentionally not durable.
 type MemoryRulesetRepository struct {
 	mu    sync.RWMutex
-	items map[string]domain.Ruleset
+	items map[string]map[string]domain.Ruleset
 }
 
 func NewMemoryRulesetRepository() *MemoryRulesetRepository {
-	return &MemoryRulesetRepository{items: make(map[string]domain.Ruleset)}
+	return &MemoryRulesetRepository{items: make(map[string]map[string]domain.Ruleset)}
 }
 
-func (r *MemoryRulesetRepository) List(_ context.Context) ([]domain.Ruleset, error) {
+func (r *MemoryRulesetRepository) List(ctx context.Context) ([]domain.Ruleset, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	items := make([]domain.Ruleset, 0, len(r.items))
-	for _, item := range r.items {
+	workspaceItems := r.items[workspaceIDFrom(ctx)]
+	items := make([]domain.Ruleset, 0, len(workspaceItems))
+	for _, item := range workspaceItems {
 		items = append(items, cloneRuleset(item))
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	return items, nil
 }
-func (r *MemoryRulesetRepository) Get(_ context.Context, id string) (domain.Ruleset, error) {
+func (r *MemoryRulesetRepository) Get(ctx context.Context, id string) (domain.Ruleset, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	item, ok := r.items[id]
+	item, ok := r.items[workspaceIDFrom(ctx)][id]
 	if !ok {
 		return domain.Ruleset{}, ErrNotFound
 	}
 	return cloneRuleset(item), nil
 }
-func (r *MemoryRulesetRepository) Save(_ context.Context, item domain.Ruleset) error {
+func (r *MemoryRulesetRepository) Save(ctx context.Context, item domain.Ruleset) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.items[item.ID] = cloneRuleset(item)
+	workspaceID := workspaceIDFrom(ctx)
+	if r.items[workspaceID] == nil {
+		r.items[workspaceID] = make(map[string]domain.Ruleset)
+	}
+	r.items[workspaceID][item.ID] = cloneRuleset(item)
 	return nil
 }
-func (r *MemoryRulesetRepository) Delete(_ context.Context, id string) error {
+func (r *MemoryRulesetRepository) Delete(ctx context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.items[id]; !ok {
+	items := r.items[workspaceIDFrom(ctx)]
+	if _, ok := items[id]; !ok {
 		return ErrNotFound
 	}
-	delete(r.items, id)
+	delete(items, id)
 	return nil
 }
 

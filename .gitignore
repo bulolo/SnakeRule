@@ -27,3 +27,4 @@ Thumbs.db
 # Docker
 .env
 !.env.example
+deploy/.env.prod

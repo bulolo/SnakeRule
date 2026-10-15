@@ -8,15 +8,128 @@
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginRequest"}}}},
-        "responses": {"200": {"description": "Authenticated session", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SessionResponse"}}}}, "401": {"description": "Invalid credentials"}}
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        }
       }
     },
     "/api/v1/auth/session": {
-      "get": {"operationId": "getSession", "responses": {"200": {"description": "Current session", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SessionResponse"}}}}}}
+      "get": {
+        "operationId": "getSession",
+        "responses": {
+          "200": {
+            "description": "Current session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "/api/v1/auth/logout": {
-      "post": {"operationId": "logout", "responses": {"200": {"description": "Session ended"}}}
+      "post": {
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "description": "Session ended"
+          }
+        }
+      }
+    },
+    "/api/v1/platform/license": {
+      "get": {
+        "operationId": "getLicense",
+        "responses": {
+          "200": {
+            "description": "Current license status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "uploadLicense",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "License validated and stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid license"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "clearLicense",
+        "responses": {
+          "200": {
+            "description": "License cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseStatus"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "/api/v1/rulesets": {
       "get": {
@@ -152,21 +265,228 @@
           }
         }
       }
+    },
+    "/api/v1/workspaces": {
+      "get": {
+        "operationId": "listWorkspaces",
+        "responses": {
+          "200": {
+            "description": "Workspaces and current selection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createWorkspace",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Workspace created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/active": {
+      "put": {
+        "operationId": "setActiveWorkspace",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveWorkspaceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Active workspace changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveWorkspaceResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{id}": {
+      "put": {
+        "operationId": "updateWorkspace",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workspace"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteWorkspace",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Workspace deleted"
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
       "LoginRequest": {
-        "type": "object", "required": ["email", "password"],
-        "properties": {"email": {"type": "string", "format": "email"}, "password": {"type": "string"}}
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
       },
       "SessionUser": {
-        "type": "object", "required": ["email", "name", "is_superadmin"],
-        "properties": {"email": {"type": "string", "format": "email"}, "name": {"type": "string"}, "is_superadmin": {"type": "boolean"}}
+        "type": "object",
+        "required": [
+          "email",
+          "name",
+          "is_superadmin"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "name": {
+            "type": "string"
+          },
+          "is_superadmin": {
+            "type": "boolean"
+          }
+        }
       },
       "SessionResponse": {
-        "type": "object", "required": ["authenticated"],
-        "properties": {"authenticated": {"type": "boolean"}, "user": {"$ref": "#/components/schemas/SessionUser"}}
+        "type": "object",
+        "required": [
+          "authenticated"
+        ],
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "user": {
+            "$ref": "#/components/schemas/SessionUser"
+          }
+        }
+      },
+      "LicenseStatus": {
+        "type": "object",
+        "required": [
+          "configured",
+          "edition",
+          "is_licensed",
+          "installation_id"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "edition": {
+            "type": "string"
+          },
+          "is_licensed": {
+            "type": "boolean"
+          },
+          "customer": {
+            "type": "string"
+          },
+          "license_type": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "features": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "feature_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "installation_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
       },
       "Action": {
         "type": "object",
@@ -357,6 +677,93 @@
             "items": {
               "$ref": "#/components/schemas/MatchedRule"
             }
+          }
+        }
+      },
+      "Workspace": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkspaceList": {
+        "type": "object",
+        "required": [
+          "items",
+          "active_workspace_id"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Workspace"
+            }
+          },
+          "active_workspace_id": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkspaceInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "ActiveWorkspaceRequest": {
+        "type": "object",
+        "required": [
+          "workspace_id"
+        ],
+        "properties": {
+          "workspace_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ActiveWorkspaceResponse": {
+        "type": "object",
+        "required": [
+          "active_workspace_id"
+        ],
+        "properties": {
+          "active_workspace_id": {
+            "type": "string"
           }
         }
       }

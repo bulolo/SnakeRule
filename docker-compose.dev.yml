@@ -1,11 +1,15 @@
 services:
   backend:
     build:
-      context: ./backend/server
-      dockerfile: Dockerfile.dev
+      context: ./backend
+      dockerfile: server/Dockerfile.dev
     image: snakerule-server:dev
     env_file:
       - ./backend/.env
+    environment:
+      LICENSE_STORE_PATH: /data/license.json
+    volumes:
+      - snakerule_data:/data
     ports:
       - "${SERVER_PORT:-8081}:${SERVER_PORT:-8081}"
     healthcheck:
@@ -109,6 +113,7 @@ services:
     command: redis-server --appendonly yes
 
 volumes:
+  snakerule_data:
   admin_node_modules:
   docs_node_modules:
   postgres_data:

@@ -1,9 +1,11 @@
 server {
     listen 80;
     server_name _;
+    resolver 127.0.0.11 ipv6=off valid=10s;
 
     location /api/ {
-        proxy_pass http://backend:${SERVER_PORT};
+        set $backend_upstream backend:${SERVER_PORT};
+        proxy_pass http://$backend_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -12,7 +14,8 @@ server {
     }
 
     location /healthz {
-        proxy_pass http://backend:${SERVER_PORT}/healthz;
+        set $backend_upstream backend:${SERVER_PORT};
+        proxy_pass http://$backend_upstream/healthz;
         proxy_set_header Host $host;
     }
 
@@ -21,7 +24,8 @@ server {
     }
 
     location /docs/ {
-        proxy_pass http://docs:8003/docs/;
+        set $docs_upstream docs:8003;
+        proxy_pass http://$docs_upstream/docs/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header Upgrade $http_upgrade;
@@ -31,7 +35,8 @@ server {
     }
 
     location / {
-        proxy_pass http://admin:3000;
+        set $admin_upstream admin:3000;
+        proxy_pass http://$admin_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header Upgrade $http_upgrade;

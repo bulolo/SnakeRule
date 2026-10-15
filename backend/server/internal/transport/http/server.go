@@ -10,21 +10,24 @@ import (
 	"time"
 
 	"github.com/szplanner/snakerule/internal/domain"
+	"github.com/szplanner/snakerule/internal/licensing"
 	"github.com/szplanner/snakerule/internal/repo"
 	"github.com/szplanner/snakerule/internal/service"
 	appversion "github.com/szplanner/snakerule/internal/version"
 )
 
 type Server struct {
-	rulesets *service.Rulesets
-	engine   *service.Engine
-	logger   *slog.Logger
-	auth     AuthConfig
-	sessions *sessionStore
+	rulesets   *service.Rulesets
+	engine     *service.Engine
+	logger     *slog.Logger
+	auth       AuthConfig
+	sessions   *sessionStore
+	license    *licensing.Manager
+	workspaces *service.Workspaces
 }
 
-func New(rulesets *service.Rulesets, engine *service.Engine, logger *slog.Logger, auth AuthConfig) *Server {
-	return &Server{rulesets: rulesets, engine: engine, logger: logger, auth: auth, sessions: newSessionStore(auth.SessionTTL)}
+func New(rulesets *service.Rulesets, engine *service.Engine, logger *slog.Logger, auth AuthConfig, license *licensing.Manager, workspaces *service.Workspaces) *Server {
+	return &Server{rulesets: rulesets, engine: engine, logger: logger, auth: auth, sessions: newSessionStore(auth.SessionTTL), license: license, workspaces: workspaces}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -43,6 +46,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
 	mux.HandleFunc("GET /api/v1/auth/session", s.currentSession)
 	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
+	mux.Handle("GET /api/v1/platform/license", s.requireSession(http.HandlerFunc(s.getLicense)))
+	mux.Handle("POST /api/v1/platform/license", s.requireSession(http.HandlerFunc(s.uploadLicense)))
+	mux.Handle("DELETE /api/v1/platform/license", s.requireSession(http.HandlerFunc(s.clearLicense)))
+	mux.Handle("GET /api/v1/workspaces", s.requireSession(http.HandlerFunc(s.listWorkspaces)))
+	mux.Handle("POST /api/v1/workspaces", s.requireSession(http.HandlerFunc(s.createWorkspace)))
+	mux.Handle("PUT /api/v1/workspaces/active", s.requireSession(http.HandlerFunc(s.setActiveWorkspace)))
+	mux.Handle("PUT /api/v1/workspaces/{id}", s.requireSession(http.HandlerFunc(s.updateWorkspace)))
+	mux.Handle("DELETE /api/v1/workspaces/{id}", s.requireSession(http.HandlerFunc(s.deleteWorkspace)))
 	mux.Handle("GET /api/v1/rulesets", s.requireSession(http.HandlerFunc(s.listRulesets)))
 	mux.Handle("POST /api/v1/rulesets", s.requireSession(http.HandlerFunc(s.saveRuleset)))
 	mux.Handle("GET /api/v1/rulesets/{id}", s.requireSession(http.HandlerFunc(s.getRuleset)))

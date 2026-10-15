@@ -1,7 +1,8 @@
-.PHONY: help dev-init check-dev-env dev dev-up dev-open dev-down dev-build dev-rebuild dev-restart dev-restart-backend dev-logs dev-logs-backend dev-logs-admin dev-logs-nginx dev-logs-docs dev-status dev-backend run-backend build-backend format check-backend check-all test gen-sdk set-version docs-install docs-dev docs-build docs-open infra-up infra-down infra-logs docker-up docker-down publish-github publish-codeup publish-all
+.PHONY: help dev-init check-dev-env dev dev-up dev-open dev-down dev-build dev-rebuild dev-restart dev-restart-backend dev-logs dev-logs-backend dev-logs-admin dev-logs-nginx dev-logs-docs dev-status dev-backend run-backend build-backend format check-backend check-all test gen-sdk set-version docs-install docs-dev docs-build docs-open infra-up infra-down infra-logs docker-up docker-down prod-init check-prod-env prod-build prod-up prod-down publish-github publish-codeup publish-all
 
 GO ?= go
 DEV_COMPOSE = docker compose --env-file backend/.env -f docker-compose.dev.yml
+PROD_COMPOSE = docker compose -p snakerule-prod --env-file deploy/.env.prod -f docker-compose.prod.yml
 SERVER_DIR = backend/server
 APP_PORT ?= $(or $(SERVER_PORT),$(shell sed -n 's/^SERVER_PORT=//p' backend/.env 2>/dev/null | tail -n 1),8080)
 ADMIN_PORT ?= $(or $(ADMIN_PORT_OVERRIDE),$(shell sed -n 's/^ADMIN_PORT=//p' backend/.env 2>/dev/null | tail -n 1),3000)
@@ -34,6 +35,10 @@ help:
 	@echo "  make dev-logs-nginx Follow Nginx gateway logs"
 	@echo "  make dev-logs-docs  Follow documentation site logs"
 	@echo "  make dev-status     Show container status and frontend/API health"
+	@echo "  make prod-init      Create production Compose settings and private secrets"
+	@echo "  make prod-build     Build production API, admin, and docs images"
+	@echo "  make prod-up        Start the production Compose stack in the background"
+	@echo "  make prod-down      Stop the production Compose stack"
 	@echo "  make run-backend    Alias for running the API server"
 	@echo "  make build-backend  Build backend/bin/snakerule-server"
 	@echo "  make format         Format Go source"
@@ -49,12 +54,7 @@ help:
 	@echo "  make publish-all [DRY_RUN=1]    Push current branch to both remotes"
 
 dev-init:
-	@if [ -f backend/.env ]; then \
-		echo "backend/.env already exists; leaving it unchanged"; \
-	else \
-		cp backend/.env.example backend/.env; \
-		echo "Created backend/.env"; \
-	fi
+	python3 scripts/init_dev_env.py
 
 check-dev-env:
 	@if [ ! -f backend/.env ]; then \
@@ -82,8 +82,21 @@ docs-build:
 	cd frontend/docs && npm run build
 docs-open:
 	@python3 -c 'import webbrowser; webbrowser.open("http://localhost:$(GATEWAY_PORT)/docs/")'
+prod-init:
+	python3 scripts/init_prod_env.py
+check-prod-env:
+	@if [ ! -f deploy/.env.prod ]; then \
+		echo "deploy/.env.prod not found; run 'make prod-init' first"; \
+		exit 1; \
+	fi
+prod-build: check-prod-env
+	$(PROD_COMPOSE) build
+prod-up: check-prod-env
+	$(PROD_COMPOSE) up -d --build
+prod-down: check-prod-env
+	$(PROD_COMPOSE) down
 dev-rebuild: check-dev-env
-	$(DEV_COMPOSE) up -d --build
+	$(DEV_COMPOSE) up -d --build --force-recreate
 dev-down:
 	$(DEV_COMPOSE) --profile infra down --remove-orphans
 dev-restart:

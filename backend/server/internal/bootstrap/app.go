@@ -11,6 +11,7 @@ import (
 
 	"github.com/szplanner/snakerule/internal/config"
 	"github.com/szplanner/snakerule/internal/domain"
+	"github.com/szplanner/snakerule/internal/licensing"
 	"github.com/szplanner/snakerule/internal/repo"
 	"github.com/szplanner/snakerule/internal/service"
 	httpapi "github.com/szplanner/snakerule/internal/transport/http"
@@ -28,13 +29,19 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 	logger := newLogger(cfg.Log.Level, cfg.Log.Format)
+	licenseManager, err := licensing.New(cfg.License.StorePath, cfg.License.EncryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("initialize license manager: %w", err)
+	}
 	store := repo.NewMemoryRulesetRepository()
+	workspaceStore := repo.NewMemoryWorkspaceRepository()
+	workspaces := service.NewWorkspaces(workspaceStore)
 	rulesets := service.NewRulesets(store)
 	engine := service.NewEngine(store)
-	if err := rulesets.Save(context.Background(), demoRuleset()); err != nil {
+	if err := rulesets.Save(repo.WithWorkspace(context.Background(), repo.DefaultWorkspaceID), demoRuleset()); err != nil {
 		return nil, fmt.Errorf("seed demo ruleset: %w", err)
 	}
-	handler := httpapi.New(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL})
+	handler := httpapi.New(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL}, licenseManager, workspaces)
 	server := &http.Server{Addr: ":" + cfg.Server.Port, Handler: handler.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	return &App{Config: cfg, Log: logger, Server: server}, nil
 }

@@ -1,0 +1,234 @@
+package licensing
+
+import (
+	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/szplanner/snakerule/internal/pulseagent"
+)
+
+const productID = "snakerule"
+
+type Status struct {
+	Configured     bool           `json:"configured"`
+	Edition        string         `json:"edition"`
+	IsLicensed     bool           `json:"is_licensed"`
+	Customer       string         `json:"customer,omitempty"`
+	LicenseType    string         `json:"license_type,omitempty"`
+	ExpiresAt      string         `json:"expires_at,omitempty"`
+	Features       map[string]any `json:"features,omitempty"`
+	FeatureKeys    []string       `json:"feature_keys,omitempty"`
+	InstallationID string         `json:"installation_id"`
+	Error          string         `json:"error,omitempty"`
+}
+
+type diskState struct {
+	InstallationID string `json:"installation_id"`
+	LicenseCipher  string `json:"license_cipher,omitempty"`
+}
+
+type Evaluator func(context.Context, string, string, string, string, time.Duration) (*pulseagent.LicenseSnapshot, error)
+
+type Manager struct {
+	mu       sync.RWMutex
+	opMu     sync.Mutex
+	path     string
+	key      []byte
+	state    diskState
+	snapshot *pulseagent.LicenseSnapshot
+	errText  string
+	evaluate Evaluator
+}
+
+func New(path, encryptionKey string) (*Manager, error) {
+	if path == "" {
+		path = "./data/license.json"
+	}
+	m := &Manager{path: path, evaluate: pulseagent.Evaluate}
+	if encryptionKey != "" {
+		decoded, err := hex.DecodeString(strings.TrimSpace(encryptionKey))
+		if err != nil || len(decoded) != 32 {
+			return nil, errors.New("LICENSE_ENCRYPTION_KEY must be 64 hexadecimal characters")
+		}
+		m.key = decoded
+	}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if err := json.Unmarshal(data, &m.state); err != nil {
+			return nil, fmt.Errorf("read license store: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if m.state.InstallationID == "" {
+		var id [16]byte
+		if _, err := rand.Read(id[:]); err != nil {
+			return nil, err
+		}
+		m.state.InstallationID = hex.EncodeToString(id[:])
+		if err := m.persist(m.state); err != nil {
+			return nil, err
+		}
+	}
+	if m.state.LicenseCipher != "" {
+		if len(m.key) == 0 {
+			return nil, errors.New("LICENSE_ENCRYPTION_KEY is required to load the saved license")
+		}
+		key, err := m.decrypt(m.state.LicenseCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt saved license: %w", err)
+		}
+		m.refresh(context.Background(), key)
+	}
+	return m, nil
+}
+
+func (m *Manager) GetStatus() Status {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	s := Status{Edition: "community", InstallationID: m.state.InstallationID, Configured: m.state.LicenseCipher != ""}
+	if m.snapshot != nil {
+		s.Edition, s.IsLicensed = m.snapshot.Edition, m.snapshot.IsLicensed
+		s.Customer, s.LicenseType, s.ExpiresAt = m.snapshot.Customer, m.snapshot.LicenseType, m.snapshot.ExpiresAt
+		s.Features, s.FeatureKeys = m.snapshot.Features, m.snapshot.FeatureKeys
+		if s.IsLicensed && s.ExpiresAt != "" {
+			expires, err := time.Parse(time.RFC3339, s.ExpiresAt)
+			if err != nil || !expires.After(time.Now()) {
+				s.IsLicensed = false
+				s.Error = "授权已过期"
+			}
+		}
+	}
+	if m.errText != "" {
+		s.Error = m.errText
+	}
+	return s
+}
+
+func (m *Manager) Upload(ctx context.Context, key string) error {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("授权文件为空")
+	}
+	if len(m.key) == 0 {
+		return errors.New("未配置 LICENSE_ENCRYPTION_KEY，不能安全保存授权")
+	}
+	snapshot, err := m.evaluate(ctx, productID, "enterprise", key, m.state.InstallationID, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("Pulse 授权校验失败：%w", err)
+	}
+	if snapshot == nil || !snapshot.IsLicensed {
+		if snapshot != nil && snapshot.Error != "" {
+			return fmt.Errorf("Pulse 拒绝该授权：%s", snapshot.Error)
+		}
+		return errors.New("Pulse 未确认该授权有效")
+	}
+	ciphertext, err := m.encrypt(key)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	next := m.state
+	next.LicenseCipher = ciphertext
+	if err := m.persist(next); err != nil {
+		return err
+	}
+	m.state, m.snapshot, m.errText = next, snapshot, ""
+	return nil
+}
+
+func (m *Manager) Clear() error {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	next := m.state
+	next.LicenseCipher = ""
+	if err := m.persist(next); err != nil {
+		return err
+	}
+	m.state, m.snapshot, m.errText = next, nil, ""
+	return nil
+}
+
+func (m *Manager) refresh(ctx context.Context, key string) {
+	snapshot, err := m.evaluate(ctx, productID, "enterprise", key, m.state.InstallationID, 10*time.Second)
+	m.snapshot = snapshot
+	if err != nil {
+		m.errText = "Pulse 授权服务暂不可用，请刷新重试"
+		return
+	}
+	if snapshot == nil || !snapshot.IsLicensed {
+		m.errText = "授权无效或已过期"
+	}
+}
+
+func (m *Manager) persist(state diskState) error {
+	if err := os.MkdirAll(filepath.Dir(m.path), 0o700); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := m.path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, m.path)
+}
+
+func (m *Manager) encrypt(value string) (string, error) {
+	h := sha256.Sum256(m.key)
+	block, err := aes.NewCipher(h[:])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	sealed := gcm.Seal(nonce, nonce, []byte(value), []byte(productID))
+	return base64.RawStdEncoding.EncodeToString(sealed), nil
+}
+
+func (m *Manager) decrypt(value string) (string, error) {
+	h := sha256.Sum256(m.key)
+	block, err := aes.NewCipher(h[:])
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	sealed, err := base64.RawStdEncoding.DecodeString(value)
+	if err != nil {
+		return "", err
+	}
+	if len(sealed) < gcm.NonceSize() {
+		return "", errors.New("saved license ciphertext is truncated")
+	}
+	plain, err := gcm.Open(nil, sealed[:gcm.NonceSize()], sealed[gcm.NonceSize():], []byte(productID))
+	return string(plain), err
+}

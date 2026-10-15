@@ -17,6 +17,7 @@ type Config struct {
 	Redis    RedisConfig    `mapstructure:"redis"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Auth     AuthConfig     `mapstructure:"auth"`
+	License  LicenseConfig  `mapstructure:"license"`
 	Log      LogConfig      `mapstructure:"log"`
 	Jev      JevConfig      `mapstructure:"jev"`
 }
@@ -48,6 +49,11 @@ type AuthConfig struct {
 	SessionTTL time.Duration `mapstructure:"session_ttl"`
 }
 
+type LicenseConfig struct {
+	StorePath     string `mapstructure:"store_path"`
+	EncryptionKey string `mapstructure:"encryption_key"`
+}
+
 type LogConfig struct {
 	Level  string `mapstructure:"level"`
 	Format string `mapstructure:"format"`
@@ -75,7 +81,7 @@ func Load() (*Config, error) {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	for _, key := range []string{
 		"server.port", "server.env", "database.url", "database.max_open_conns", "database.max_idle_conns",
-		"redis.url", "jwt.secret", "jwt.expires_in", "auth.email", "auth.name", "auth.password", "auth.session_ttl", "log.level", "log.format",
+		"redis.url", "jwt.secret", "jwt.expires_in", "auth.email", "auth.name", "auth.password", "auth.session_ttl", "license.store_path", "license.encryption_key", "log.level", "log.format",
 		"jev.api_url", "jev.api_key", "jev.default_model", "jev.default_timeout_ms",
 	} {
 		if err := viper.BindEnv(key); err != nil {
@@ -90,6 +96,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("auth.name", "SuperAdmin")
 	viper.SetDefault("auth.password", "")
 	viper.SetDefault("auth.session_ttl", "24h")
+	viper.SetDefault("license.store_path", "./data/license.json")
 	viper.SetDefault("database.max_open_conns", 20)
 	viper.SetDefault("database.max_idle_conns", 5)
 	viper.SetDefault("log.level", "info")

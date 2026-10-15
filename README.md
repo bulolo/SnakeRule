@@ -210,6 +210,10 @@ make dev-up
 
 管理端现已接入超级管理员邮箱登录，当前本地开发账号配置在被 Git 忽略的 `backend/.env` 中。可通过 `AUTH_EMAIL`、`AUTH_NAME`、`AUTH_PASSWORD` 和 `AUTH_SESSION_TTL` 设置登录身份；部署环境必须使用独立密码。登录后可进入规则集列表、拖拽设计画布和模拟决策，退出或会话过期后会返回登录页。
 
+平台设置包含「系统信息」授权管理。开发初始化会生成 `LICENSE_ENCRYPTION_KEY`，授权密文和实例 ID 存放在持久化数据卷中；使用授权前还需配置授权签发方提供的 SnakeRule `PULSE_PRODUCT_PUBLIC_KEY`。授权由 Pulse Agent 验签，通过后才会保存。规则引擎当前没有由授权控制的功能点，接入授权状态不会改变现有规则执行能力。
+
+生产 Compose 使用独立镜像构建：执行 `make prod-init` 生成本地管理员凭据与授权加密密钥，在 `deploy/.env.prod` 配置 `AUTH_EMAIL` 和 Pulse 产品公钥后运行 `make prod-up`。生产配置只公开 Nginx 网关；当前规则集、工作空间和会话仍是内存数据，重启后会清空，正式业务部署前需要接入持久化数据库并配置 TLS。
+
 右上角提供「平台设置」与「系统设置」入口：平台页展示版本、授权版本、服务状态及规则服务配置；系统页展示工作空间、规则引擎和账号安全信息。当前为只读信息面板，后续再接持久化配置项。
 
 规则存储目前使用进程内存；PostgreSQL 和 Redis 容器可通过 `make infra-up` 启动，当前 API 暂不依赖它们。

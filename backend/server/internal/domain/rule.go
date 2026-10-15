@@ -1,5 +1,17 @@
 package domain
 
+import "time"
+
+// Workspace groups rulesets for an independent team or project area.
+type Workspace struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 // Ruleset is a versioned collection of rules evaluated as one decision.
 type Ruleset struct {
 	ID          string `json:"id"`
