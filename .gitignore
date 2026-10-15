@@ -1,4 +1,5 @@
 # Go
+backend/bin/
 backend/*/tmp/
 backend/*/*.exe
 backend/*/vendor/

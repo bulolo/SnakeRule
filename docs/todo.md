@@ -1,6 +1,5 @@
 # SnakeRule 开发计划
 
-> 参考：[Boot Rule 功能体系](http://ruleengine.cn/doc/quickstart/Quickstart.html)
 > 架构原则：规则配置服务 / 规则计算服务集群**分离部署**，计算节点支持动态扩缩容。
 
 ---
@@ -15,7 +14,7 @@
 - [ ] 健康检查接口 `GET /healthz`
 - [ ] Swagger / OpenAPI 文档生成
 
-### 📐 基础组件（参照 Boot Rule：参数 / 变量 / 函数 / 条件）
+### 📐 规则输入与 DSL
 
 - [ ] **输入参数（InputParameter）**
   - [ ] 参数类型系统：`string / number / boolean / date / array / object`
@@ -54,7 +53,7 @@
   - [ ] `log`：记录自定义日志
   - [ ] `abort`：中止后续规则执行
 
-### 🚀 三种规则类型（参照 Boot Rule）
+### 🚀 规则模型演进
 
 - [ ] **普通规则（GeneralRule）**
   - [ ] 同步执行 `POST /api/v1/engine/evaluate`
@@ -124,7 +123,7 @@
 ## Phase 3 — 权限管理与多租户
 
 - [ ] **工作空间（Workspace）**
-  - [ ] 工作空间 CRUD（类似 Boot Rule Workspace）
+  - [ ] 工作空间 CRUD
   - [ ] 租户隔离：所有资源绑定 `tenant_id`
   - [ ] 工作空间切换（前端顶栏 Switcher）
 - [ ] **RBAC 权限**

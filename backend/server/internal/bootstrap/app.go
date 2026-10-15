@@ -34,7 +34,7 @@ func New() (*App, error) {
 	if err := rulesets.Save(context.Background(), demoRuleset()); err != nil {
 		return nil, fmt.Errorf("seed demo ruleset: %w", err)
 	}
-	handler := httpapi.New(rulesets, engine, logger)
+	handler := httpapi.New(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL})
 	server := &http.Server{Addr: ":" + cfg.Server.Port, Handler: handler.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	return &App{Config: cfg, Log: logger, Server: server}, nil
 }
@@ -52,7 +52,7 @@ func demoRuleset() domain.Ruleset {
 			},
 			{ID: "vip-order", Name: "VIP 订单标记", Priority: 50, Enabled: true,
 				Conditions: domain.Condition{Fact: "customer.level", Operator: "equal", Value: "VIP"},
-				Actions: []domain.Action{{Type: "tag", Config: map[string]any{"label": "VIP"}}},
+				Actions:    []domain.Action{{Type: "tag", Config: map[string]any{"label": "VIP"}}},
 			},
 		},
 	}

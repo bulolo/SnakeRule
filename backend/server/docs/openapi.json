@@ -1,0 +1,365 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SnakeRule API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoginRequest"}}}},
+        "responses": {"200": {"description": "Authenticated session", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SessionResponse"}}}}, "401": {"description": "Invalid credentials"}}
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {"operationId": "getSession", "responses": {"200": {"description": "Current session", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SessionResponse"}}}}}}
+    },
+    "/api/v1/auth/logout": {
+      "post": {"operationId": "logout", "responses": {"200": {"description": "Session ended"}}}
+    },
+    "/api/v1/rulesets": {
+      "get": {
+        "operationId": "listRulesets",
+        "responses": {
+          "200": {
+            "description": "Rulesets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RulesetList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createRuleset",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Ruleset"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved ruleset"
+          }
+        }
+      }
+    },
+    "/api/v1/rulesets/{id}": {
+      "get": {
+        "operationId": "getRuleset",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ruleset",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ruleset"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateRuleset",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Ruleset"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved ruleset"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteRuleset",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/engine/evaluate": {
+      "post": {
+        "operationId": "evaluate",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvaluateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LoginRequest": {
+        "type": "object", "required": ["email", "password"],
+        "properties": {"email": {"type": "string", "format": "email"}, "password": {"type": "string"}}
+      },
+      "SessionUser": {
+        "type": "object", "required": ["email", "name", "is_superadmin"],
+        "properties": {"email": {"type": "string", "format": "email"}, "name": {"type": "string"}, "is_superadmin": {"type": "boolean"}}
+      },
+      "SessionResponse": {
+        "type": "object", "required": ["authenticated"],
+        "properties": {"authenticated": {"type": "boolean"}, "user": {"$ref": "#/components/schemas/SessionUser"}}
+      },
+      "Action": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "Condition": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            }
+          },
+          "any": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            }
+          },
+          "not": {
+            "$ref": "#/components/schemas/Condition"
+          },
+          "fact": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "string"
+          },
+          "value": {}
+        }
+      },
+      "Rule": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "priority",
+          "enabled",
+          "conditions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "conditions": {
+            "$ref": "#/components/schemas/Condition"
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            }
+          }
+        }
+      },
+      "Ruleset": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "enabled",
+          "rules"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Rule"
+            }
+          }
+        }
+      },
+      "RulesetList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Ruleset"
+            }
+          }
+        }
+      },
+      "EvaluateRequest": {
+        "type": "object",
+        "required": [
+          "rulesetId",
+          "facts"
+        ],
+        "properties": {
+          "rulesetId": {
+            "type": "string"
+          },
+          "facts": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "MatchedRule": {
+        "type": "object",
+        "required": [
+          "ruleId",
+          "name",
+          "priority"
+        ],
+        "properties": {
+          "ruleId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Action"
+            }
+          }
+        }
+      },
+      "Decision": {
+        "type": "object",
+        "required": [
+          "rulesetId",
+          "version",
+          "matched",
+          "hitRules"
+        ],
+        "properties": {
+          "rulesetId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "matched": {
+            "type": "boolean"
+          },
+          "hitRules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MatchedRule"
+            }
+          }
+        }
+      }
+    }
+  }
+}

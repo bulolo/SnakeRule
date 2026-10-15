@@ -1,0 +1,14 @@
+{
+  "name": "snakerule-docs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev docs --host 0.0.0.0 --port 8003",
+    "build": "vitepress build docs",
+    "preview": "vitepress preview docs --host 0.0.0.0 --port 8003"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.4"
+  }
+}

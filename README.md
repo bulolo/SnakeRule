@@ -13,7 +13,7 @@
 
 简体中文 | [English](./README_EN.md)
 
-[官网](https://szplanner.com) | [文档中心](#) | [在线演示](#)
+[官网](https://szplanner.com) | [文档中心](./frontend/docs/docs/index.md) | [在线演示](#)
 
 </div>
 
@@ -68,7 +68,7 @@ SnakeRule 是一款**企业级可视化规则引擎平台**，将传统规则引
 │                                                         │
 │  ┌──────────────┐    ┌──────────────┐                  │
 │  │  管理控制台   │    │   官网/文档   │                  │
-│  │ (Next.js)    │    │  (Next.js)   │                  │
+│  │ (React/Vite) │    │ (VitePress)  │                  │
 │  └──────┬───────┘    └──────────────┘                  │
 │         │                                               │
 │  ┌──────▼──────────────────────────────────────┐       │
@@ -97,16 +97,7 @@ SnakeRule 是一款**企业级可视化规则引擎平台**，将传统规则引
 
 ## 🧩 核心概念
 
-> 参照 [Boot Rule](http://ruleengine.cn/doc/quickstart/Quickstart.html) 功能体系，SnakeRule 由以下六大基础组件构成：
-
-| 概念 | 说明 |
-|------|------|
-| **InputParameter（输入参数）** | 决策时传入的上下文数据，支持 `string / number / boolean / date / array / object` 类型，可来自 Request Body、Header 或常量 |
-| **Variable（变量）** | 规则运行时可定义中间变量，支持链式引用与作用域隔离（规则级 / 规则集级） |
-| **Function（函数）** | 内置字符串、数学、日期函数库，支持自定义函数插件扩展（如 `dateDiff / regex / sum / age`） |
-| **Condition（条件）** | 支持 `AND / OR / NOT` 无限嵌套，内置 `eq / ne / gt / gte / lt / lte / in / notIn / contains / isNull` 等操作符 |
-| **Rule（规则）** | 单条规则，包含条件（Condition）和动作（Action），动作类型：`set_variable / webhook / tag / log / abort` |
-| **Decision（决策）** | 一次规则执行的完整记录，含输入 Facts、命中规则、执行 Actions、耗时、Jev AI 评分 |
+SnakeRule 当前围绕规则集、规则、条件、动作和决策结果组织。规则集以 JSON DSL 表达，条件支持 `all / any / not` 组合；求值结果返回命中的规则及其动作。当前版本提供规则集编辑和决策试运行，变量、函数及外部动作执行会在后续迭代中逐步实现。
 
 ### 三种规则类型
 
@@ -125,22 +116,22 @@ SnakeRule 是一款**企业级可视化规则引擎平台**，将传统规则引
 | 组件 | 技术选型 | 说明 |
 |------|---------|------|
 | **语言** | Go 1.24+ | 高性能，与 OwlApi 保持一致 |
-| **Web 框架** | Gin | 轻量高性能 HTTP 框架 |
+| **Web 框架** | Go `net/http`（MVP） | 标准库路由；当前阶段少依赖、单进程启动 |
 | **规则引擎核心** | 自研（参考 json-rules-engine） | JSON DSL 描述规则，支持嵌套条件 |
-| **表达式引擎** | expr-lang/expr | 类型安全表达式求值，字节码编译 |
-| **数据库** | PostgreSQL 16+ | 规则、日志、租户数据持久化 |
-| **缓存** | Redis | 规则热缓存、决策结果缓存 |
-| **消息队列** | Redis Stream / NATS | 异步规则执行、日志投递 |
-| **AI 集成** | Jev API / OpenAI Compatible | AI 决策节点调用 |
+| **表达式引擎** | JSON 条件求值（MVP） | expr-lang 是后续复杂表达式能力的候选 |
+| **数据库** | 进程内存（MVP） | PostgreSQL 作为下一阶段持久化适配器 |
+| **缓存** | 暂无（MVP） | Redis 规则热缓存后续接入 |
+| **消息队列** | 暂无（MVP） | 异步决策后续接入 |
+| **AI 集成** | Jev API（规划） | 作为后续决策节点 |
 | **配置管理** | Viper | 多环境配置 |
 | **ORM** | sqlx + 手写 SQL | 性能优先，与 OwlApi 一致 |
 
-### 前端
+### 前端与文档
 
 | 组件 | 技术选型 | 说明 |
 |------|---------|------|
-| **框架** | Next.js 15+ | 与 OwlApi 保持一致 |
-| **UI 组件库** | shadcn/ui + Tailwind CSS | 现代化设计系统 |
+| **管理端框架** | React + Vite | 规则集工作台与 API 客户端 |
+| **文档站点** | VitePress | 使用指南、规则说明与 API 概览 |
 | **规则编辑器** | 自研拖拽式规则构建器 | 可视化条件/动作配置 |
 | **流程可视化** | ReactFlow | 规则链路可视化 |
 | **状态管理** | Zustand | 轻量状态管理 |
@@ -169,55 +160,31 @@ SnakeRule/
 │   │   ├── internal/
 │   │   │   ├── bootstrap/         # 服务启动初始化
 │   │   │   ├── config/            # 配置读取与校验
-│   │   │   ├── domain/            # 领域模型（Rule/Decision/Log）
-│   │   │   ├── repo/              # 数据库访问层
+│   │   │   ├── domain/            # Rule / Ruleset / Decision 模型
+│   │   │   ├── engine/evaluator/  # 规则条件求值
+│   │   │   ├── repo/              # 当前为内存存储接口
 │   │   │   ├── service/           # 业务逻辑层
-│   │   │   ├── transport/         # HTTP 路由与 Handler
-│   │   │   ├── engine/            # 规则引擎核心
-│   │   │   │   ├── evaluator/     # 条件求值器
-│   │   │   │   ├── executor/      # 动作执行器
-│   │   │   │   ├── jev/           # Jev AI 决策节点适配
-│   │   │   │   └── cache/         # 规则热缓存
-│   │   │   └── pkg/               # 工具包
-│   │   ├── docs/                  # Swagger API 文档
+│   │   │   ├── transport/http/    # REST API 与嵌入式规则工作台
+│   │   │   └── version/           # 服务版本
+│   │   ├── docs/openapi.json      # OpenAPI 契约
 │   │   └── go.mod
-│   ├── shared/                    # 共享类型定义
 │   └── .env.example
 │
-├── frontend/
-│   ├── src/                       # 管理控制台主应用
-│   │   ├── app/                   # Next.js App Router
-│   │   ├── components/
-│   │   │   ├── rule-builder/      # 可视化规则构建器
-│   │   │   └── rule-visualizer/   # 规则链路可视化
-│   │   ├── hooks/
-│   │   └── store/                 # Zustand 状态
-│   ├── admin/                     # 超管后台
-│   └── docs/                      # 文档站
-│
-├── deploy/
-│   ├── docker-compose.yml         # 生产 Compose
-│   ├── docker-compose.dev.yml     # 开发 Compose
-│   ├── helm/                      # Helm Charts
-│   ├── nginx/                     # Nginx 配置
-│   └── ingress/                   # K8s Ingress
+├── frontend/admin/                # React + Vite 管理端与 OpenAPI SDK
+├── frontend/docs/                 # VitePress 产品文档站点
 │
 ├── docs/
-│   ├── research/                  # 技术调研文档
-│   │   ├── rule-engine-survey.md  # 开源规则引擎调研
-│   │   └── jev-integration.md     # Jev 集成方案
+│   ├── research/                  # 技术调研
 │   ├── architecture.md            # 架构设计
 │   └── todo.md                    # 开发计划
 │
 ├── scripts/
-│   ├── seed_db.sh                 # 数据库初始化
-│   ├── smoke_test.py              # 冒烟测试
-│   └── version.py                 # 版本管理
+│   ├── generate_sdk.py            # 生成 TypeScript SDK
+│   └── set_version.py             # 更新项目版本
 │
+├── VERSION
 ├── Makefile
 ├── docker-compose.dev.yml
-├── .gitignore
-├── LICENSE
 └── README.md
 ```
 
@@ -228,41 +195,26 @@ SnakeRule/
 ### 前置条件
 
 - Go 1.24+
-- Node.js 20+
-- Docker & Docker Compose
-- PostgreSQL 16+
-- Redis 7+
+- Make
 
 ### 本地开发
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/szplanner/snakerule.git
-cd SnakeRule
-
-# 2. 启动基础设施
-docker compose -f docker-compose.dev.yml up -d postgres redis
-
-# 3. 启动后端
-cd backend
-cp .env.example .env
-go run server/cmd/main/main.go
-
-# 4. 启动前端
-cd frontend/src
-pnpm install
-pnpm dev
+make dev-init
+make dev-up
 ```
 
-### 使用 Docker Compose 一键启动
+`make dev-up` 会启动 Nginx、管理端、文档站点和 Go API。浏览器打开 http://localhost:8080 使用规则工作台，http://localhost:8080/docs/ 阅读文档；管理端直连地址是 http://localhost:3000，文档开发服务器为 http://localhost:8003/docs/，API 默认地址为 http://localhost:8081。也可以执行 `make dev-open` 或 `make docs-open` 打开站点。运行日志显示在终端中；另开终端执行 `make dev-down` 可停止服务。
 
-```bash
-docker compose up -d
-```
+文档位于 `frontend/docs`，可通过 `make docs-dev` 单独启动预览、`make docs-build` 构建静态站点。文档的基础维护、项目结构、规则模型和 API 说明均按 SnakeRule 当前实现编写。
 
-访问：
-- 管理控制台：http://localhost:3000
-- API 文档：http://localhost:8080/swagger
+管理端现已接入超级管理员邮箱登录，当前本地开发账号配置在被 Git 忽略的 `backend/.env` 中。可通过 `AUTH_EMAIL`、`AUTH_NAME`、`AUTH_PASSWORD` 和 `AUTH_SESSION_TTL` 设置登录身份；部署环境必须使用独立密码。登录后可进入规则集列表、拖拽设计画布和模拟决策，退出或会话过期后会返回登录页。
+
+右上角提供「平台设置」与「系统设置」入口：平台页展示版本、授权版本、服务状态及规则服务配置；系统页展示工作空间、规则引擎和账号安全信息。当前为只读信息面板，后续再接持久化配置项。
+
+规则存储目前使用进程内存；PostgreSQL 和 Redis 容器可通过 `make infra-up` 启动，当前 API 暂不依赖它们。
+
+`make gen-sdk` 根据服务的 OpenAPI 契约生成管理端 TypeScript API SDK；`make set-version v=0.1.1` 同步更新 `VERSION`、服务版本、OpenAPI 文档和管理端版本。
 
 ---
 
@@ -339,7 +291,7 @@ docker compose up -d
 ### API 调用示例
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/engine/evaluate \
+curl -X POST http://localhost:8081/api/v1/engine/evaluate \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: your-api-key" \
   -d '{

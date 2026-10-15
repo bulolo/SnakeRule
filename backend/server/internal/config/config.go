@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
@@ -15,6 +16,7 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
+	Auth     AuthConfig     `mapstructure:"auth"`
 	Log      LogConfig      `mapstructure:"log"`
 	Jev      JevConfig      `mapstructure:"jev"`
 }
@@ -37,6 +39,13 @@ type RedisConfig struct {
 type JWTConfig struct {
 	Secret    string `mapstructure:"secret"`
 	ExpiresIn string `mapstructure:"expires_in"`
+}
+
+type AuthConfig struct {
+	Email      string        `mapstructure:"email"`
+	Name       string        `mapstructure:"name"`
+	Password   string        `mapstructure:"password"`
+	SessionTTL time.Duration `mapstructure:"session_ttl"`
 }
 
 type LogConfig struct {
@@ -66,7 +75,7 @@ func Load() (*Config, error) {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	for _, key := range []string{
 		"server.port", "server.env", "database.url", "database.max_open_conns", "database.max_idle_conns",
-		"redis.url", "jwt.secret", "jwt.expires_in", "log.level", "log.format",
+		"redis.url", "jwt.secret", "jwt.expires_in", "auth.email", "auth.name", "auth.password", "auth.session_ttl", "log.level", "log.format",
 		"jev.api_url", "jev.api_key", "jev.default_model", "jev.default_timeout_ms",
 	} {
 		if err := viper.BindEnv(key); err != nil {
@@ -75,8 +84,12 @@ func Load() (*Config, error) {
 	}
 
 	// defaults
-	viper.SetDefault("server.port", "8080")
+	viper.SetDefault("server.port", "8081")
 	viper.SetDefault("server.env", "development")
+	viper.SetDefault("auth.email", "superadmin@snakerule.cn")
+	viper.SetDefault("auth.name", "SuperAdmin")
+	viper.SetDefault("auth.password", "")
+	viper.SetDefault("auth.session_ttl", "24h")
 	viper.SetDefault("database.max_open_conns", 20)
 	viper.SetDefault("database.max_idle_conns", 5)
 	viper.SetDefault("log.level", "info")
@@ -89,6 +102,15 @@ func Load() (*Config, error) {
 	}
 	if cfg.Server.Port == "" {
 		return nil, errors.New("SERVER_PORT must not be empty")
+	}
+	if cfg.Auth.SessionTTL <= 0 {
+		return nil, errors.New("AUTH_SESSION_TTL must be positive")
+	}
+	if strings.TrimSpace(cfg.Auth.Email) == "" || strings.TrimSpace(cfg.Auth.Password) == "" {
+		return nil, errors.New("AUTH_EMAIL and AUTH_PASSWORD must be configured")
+	}
+	if strings.EqualFold(cfg.Server.Env, "production") && cfg.Auth.Password == "change-this-before-run" {
+		return nil, errors.New("production requires a non-default AUTH_PASSWORD")
 	}
 	return cfg, nil
 }

@@ -49,7 +49,7 @@ internal/
 
 服务端按 `cmd → bootstrap → transport → service → repo/domain` 组织，规则求值核心独立在 `internal/engine/evaluator`。HTTP 层使用 Go 标准库 `ServeMux`，首阶段不引入 Gin 中间件依赖；标准库已支持方法与路径匹配，足以承载当前少量 API。规则 DSL 按 JSON 递归条件树实现，规则只做确定性求值，Action 暂时作为决策结果返回，不触发外部副作用。
 
-当前提供 `GET /healthz`、`GET /readyz`、规则集 CRUD 和 `POST /api/v1/engine/evaluate`。规则仓储是并发安全的内存适配器，服务重启后数据会清空；PostgreSQL、Redis、异步决策、发布版本和多租户均留待后续阶段，避免在领域模型尚未稳定时锁定持久化结构。
+当前提供 `GET /healthz`、`GET /readyz`、规则集 CRUD 和 `POST /api/v1/engine/evaluate`。Go 后端容器通过 embed 提供轻量规则工作台；`make dev-up` 使用 Docker Compose 构建并以前台方式启动，访问 `http://localhost:8081` 即可编辑规则、提交 facts 并查看命中结果。规则仓储是并发安全的内存适配器，服务重启后数据会清空；PostgreSQL、Redis、异步决策、发布版本和多租户均留待后续阶段，避免在领域模型尚未稳定时锁定持久化结构。
 
 目录落点：`backend/server/internal/domain`、`engine/evaluator`、`repo`、`service`、`transport/http`、`bootstrap`。每个 API 层通过服务接口访问仓储，后续可在保持 HTTP 与引擎契约稳定的前提下替换 PostgreSQL 实现。
 

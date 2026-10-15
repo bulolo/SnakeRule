@@ -127,6 +127,9 @@ $("evaluate").addEventListener("click", async () => {
     const item = JSON.parse(editor.value);
     const input = JSON.parse(facts.value);
     if (!item.id) throw new Error("规则集 id 必填");
+    await request(`/api/v1/rulesets/${encodeURIComponent(item.id)}`, { method: "PUT", body: JSON.stringify(item) });
+    state.currentID = item.id;
+    await refreshRulesets(item.id);
     const result = await request("/api/v1/engine/evaluate", {
       method: "POST",
       body: JSON.stringify({ rulesetId: item.id, facts: input })
@@ -140,4 +143,5 @@ $("evaluate").addEventListener("click", async () => {
 
 facts.value = pretty({ order: { amount: 12800 }, customer: { isNew: true, level: "STANDARD" } });
 setEditor(sample);
+request("/api/v1/meta").then((meta) => { $("app-version").textContent = `v${meta.version}`; }).catch(() => {});
 refreshRulesets().catch((error) => showError("editor-error", error.message));

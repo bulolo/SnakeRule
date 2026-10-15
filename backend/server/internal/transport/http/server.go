@@ -12,16 +12,19 @@ import (
 	"github.com/szplanner/snakerule/internal/domain"
 	"github.com/szplanner/snakerule/internal/repo"
 	"github.com/szplanner/snakerule/internal/service"
+	appversion "github.com/szplanner/snakerule/internal/version"
 )
 
 type Server struct {
 	rulesets *service.Rulesets
 	engine   *service.Engine
 	logger   *slog.Logger
+	auth     AuthConfig
+	sessions *sessionStore
 }
 
-func New(rulesets *service.Rulesets, engine *service.Engine, logger *slog.Logger) *Server {
-	return &Server{rulesets: rulesets, engine: engine, logger: logger}
+func New(rulesets *service.Rulesets, engine *service.Engine, logger *slog.Logger, auth AuthConfig) *Server {
+	return &Server{rulesets: rulesets, engine: engine, logger: logger, auth: auth, sessions: newSessionStore(auth.SessionTTL)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -34,12 +37,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
-	mux.HandleFunc("GET /api/v1/rulesets", s.listRulesets)
-	mux.HandleFunc("POST /api/v1/rulesets", s.saveRuleset)
-	mux.HandleFunc("GET /api/v1/rulesets/{id}", s.getRuleset)
-	mux.HandleFunc("PUT /api/v1/rulesets/{id}", s.saveRuleset)
-	mux.HandleFunc("DELETE /api/v1/rulesets/{id}", s.deleteRuleset)
-	mux.HandleFunc("POST /api/v1/engine/evaluate", s.evaluate)
+	mux.HandleFunc("GET /api/v1/meta", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"version": appversion.Version})
+	})
+	mux.HandleFunc("POST /api/v1/auth/login", s.login)
+	mux.HandleFunc("GET /api/v1/auth/session", s.currentSession)
+	mux.HandleFunc("POST /api/v1/auth/logout", s.logout)
+	mux.Handle("GET /api/v1/rulesets", s.requireSession(http.HandlerFunc(s.listRulesets)))
+	mux.Handle("POST /api/v1/rulesets", s.requireSession(http.HandlerFunc(s.saveRuleset)))
+	mux.Handle("GET /api/v1/rulesets/{id}", s.requireSession(http.HandlerFunc(s.getRuleset)))
+	mux.Handle("PUT /api/v1/rulesets/{id}", s.requireSession(http.HandlerFunc(s.saveRuleset)))
+	mux.Handle("DELETE /api/v1/rulesets/{id}", s.requireSession(http.HandlerFunc(s.deleteRuleset)))
+	mux.Handle("POST /api/v1/engine/evaluate", s.requireSession(http.HandlerFunc(s.evaluate)))
 	return s.recover(s.accessLog(mux))
 }
 
