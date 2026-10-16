@@ -407,11 +407,15 @@ func (s *Server) evaluate(w http.ResponseWriter, r *http.Request) {
 		}
 		hits := make([]domain.InvocationHitRule, 0, len(decision.HitRules))
 		for _, hit := range decision.HitRules {
-			hits = append(hits, domain.InvocationHitRule{RuleID: hit.RuleID, Name: hit.Name})
+			actions := make([]string, 0, len(hit.Actions))
+			for _, action := range hit.Actions {
+				actions = append(actions, action.Type)
+			}
+			hits = append(hits, domain.InvocationHitRule{RuleID: hit.RuleID, Name: hit.Name, Priority: hit.Priority, Actions: actions})
 		}
 		_ = s.invocationLogs.Add(domain.InvocationLog{
 			WorkspaceID: repo.WorkspaceIDFrom(r.Context()), ProjectID: repo.ProjectIDFrom(r.Context()),
-			RulesetID: rulesetID, Source: source, CredentialType: credential.Type, StatusCode: recorder.status,
+			RulesetID: rulesetID, Method: r.Method, Path: r.URL.Path, Source: source, CredentialType: credential.Type, StatusCode: recorder.status,
 			Matched:  recorder.status >= 200 && recorder.status < 300 && decision.Matched,
 			HitRules: hits, DurationMS: time.Since(startedAt).Milliseconds(), CreatedAt: startedAt.UTC(),
 		})

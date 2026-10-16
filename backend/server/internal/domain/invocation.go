@@ -8,6 +8,8 @@ type InvocationLog struct {
 	WorkspaceID    string              `json:"workspace_id"`
 	ProjectID      string              `json:"project_id"`
 	RulesetID      string              `json:"ruleset_id,omitempty"`
+	Method         string              `json:"method"`
+	Path           string              `json:"path"`
 	Source         string              `json:"source"`
 	CredentialType string              `json:"credential_type"`
 	StatusCode     int                 `json:"status_code"`
@@ -18,6 +20,8 @@ type InvocationLog struct {
 }
 
 type InvocationHitRule struct {
-	RuleID string `json:"rule_id"`
-	Name   string `json:"name"`
+	RuleID   string   `json:"rule_id"`
+	Name     string   `json:"name"`
+	Priority int      `json:"priority"`
+	Actions  []string `json:"actions,omitempty"`
 }

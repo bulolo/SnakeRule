@@ -198,10 +198,12 @@ export interface InvocationLog {
   credential_type: string;
   status_code: number;
   matched: boolean;
-  hit_rules?: Record<string, JSONValue>[];
+  hit_rules?: InvocationHitRule[];
   duration_ms: number;
   created_at: string;
   source: string;
+  method?: string;
+  path?: string;
 }
 
 export interface Pagination {
@@ -220,6 +222,13 @@ export interface InvocationListQuery {
   page?: number;
   size?: number;
   is_pager?: number;
+}
+
+export interface InvocationHitRule {
+  rule_id?: string;
+  name?: string;
+  priority?: number;
+  actions?: string[];
 }
 
 export class SnakeRuleApiError extends Error {

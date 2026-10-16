@@ -1532,15 +1532,7 @@
           "hit_rules": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "rule_id": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/components/schemas/InvocationHitRule"
             }
           },
           "duration_ms": {
@@ -1557,6 +1549,12 @@
               "project_api",
               "management"
             ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
           }
         },
         "required": [
@@ -1634,6 +1632,26 @@
               1
             ],
             "default": 1
+          }
+        }
+      },
+      "InvocationHitRule": {
+        "type": "object",
+        "properties": {
+          "rule_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }
