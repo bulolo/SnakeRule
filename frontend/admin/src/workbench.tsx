@@ -43,7 +43,7 @@ export function Workbench() {
   const [decision, setDecision] = useState<Decision | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [version, setVersion] = useState("0.1.0");
+  const [version, setVersion] = useState("0.0.2");
   const [platformBrand, setPlatformBrand] = useState<PlatformSettings>({ name: "SnakeRule", tagline: "确定性规则求值平台", logo_url: "" });
   const [busy, setBusy] = useState(false);
   const [screen, setScreen] = useState<"overview" | "design" | "projects">(() => {
@@ -149,7 +149,7 @@ export function Workbench() {
         fetch("/api/v1/meta"),
       ]);
       const meta = await readAPIResponse<{ version: string }>(metaResponse);
-      setVersion(meta.version ?? "0.1.0");
+      setVersion(meta.version ?? "0.0.2");
       const item =
         list.list.find((candidate) => candidate.id === (id ?? selected.id)) ??
         list.list[0];

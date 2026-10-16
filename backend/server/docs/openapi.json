@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "SnakeRule API v1",
-    "version": "1.0.0",
+    "version": "0.0.2",
     "description": "SnakeRule REST API v1. JSON responses use {code, msg, data}; errors include a stable error_code. List endpoints document pagination with is_pager, page, size, and total."
   },
   "paths": {
