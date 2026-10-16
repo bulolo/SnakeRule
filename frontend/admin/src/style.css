@@ -4617,7 +4617,7 @@ footer {
 .project-invocation-modal > header > div { min-width: 0; }
 .project-invocation-modal > header h2 { font-size: 23px; }
 .project-invocation-modal > header p { max-width: 1050px; font-size: 12px; line-height: 1.75; }
-.project-invocation-list { display: grid; min-height: 0; flex: 1; overflow: auto; margin-top: 18px; border-top: 1px solid #edf1ee; }
+.project-invocation-list { display: grid; grid-auto-rows: min-content; align-content: start; min-height: 0; flex: 1; overflow: auto; margin-top: 18px; border-top: 1px solid #edf1ee; }
 .project-invocation-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(245px,300px); min-height: 88px; align-items: center; gap: 28px; padding: 17px 10px; border-bottom: 1px solid #edf1ee; }
 .project-invocation-result { display: flex; min-width: 0; align-items: flex-start; gap: 10px; }
 .project-invocation-result > i { width: 8px; height: 8px; flex: none; margin-top: 4px; border-radius: 50%; background: #75aa83; }
