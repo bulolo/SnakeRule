@@ -1,4 +1,4 @@
-.PHONY: help dev-init check-dev-env dev dev-up dev-open dev-down dev-clean dev-build dev-rebuild dev-restart dev-restart-backend dev-logs dev-logs-backend dev-logs-admin dev-logs-nginx dev-logs-docs dev-status dev-backend run-backend build-backend format check-backend check-all test gen-sdk set-version docs-install docs-dev docs-build docs-open infra-up infra-down infra-logs docker-up docker-down prod-init check-prod-env prod-build prod-up prod-down helm-lint helm-template helm-install helm-upgrade helm-uninstall publish-github publish-codeup publish-all
+.PHONY: help dev-init check-dev-env dev dev-up dev-open dev-down dev-clean dev-build dev-rebuild dev-restart dev-restart-backend dev-logs dev-logs-backend dev-logs-admin dev-logs-nginx dev-logs-docs dev-status dev-backend run-backend build-backend format check-backend check-all test gen-sdk set-version docs-install docs-dev docs-build docs-open infra-up infra-down infra-logs docker-up docker-down prod-init check-prod-env prod-build prod-up prod-down helm-lint helm-template helm-install helm-uninstall publish-github publish-codeup publish-all
 
 GO ?= go
 DEV_COMPOSE = docker compose --env-file backend/.env -f docker-compose.dev.yml
@@ -40,7 +40,7 @@ help:
 	@echo "  make dev-logs       Follow all development logs"
 	@echo "  make dev-logs-backend Follow API logs"
 	@echo "  make dev-logs-admin Follow admin frontend logs"
-	@echo "  make dev-logs-nginx Follow Nginx gateway logs"
+	@echo "  make dev-logs-nginx Follow Nginx reverse proxy logs"
 	@echo "  make dev-logs-docs  Follow documentation site logs"
 	@echo "  make dev-status     Show container status and frontend/API health"
 	@echo "  make prod-init      Create production Compose settings and private secrets"
@@ -114,7 +114,7 @@ helm-lint:
 helm-template:
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NAMESPACE) $(HELM_VALUES_ARG) $(HELM_SET)
 
-helm-install helm-upgrade:
+helm-install:
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NAMESPACE) --create-namespace $(HELM_VALUES_ARG) $(HELM_SET) --wait
 
 helm-uninstall:

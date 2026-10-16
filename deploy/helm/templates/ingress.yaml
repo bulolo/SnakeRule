@@ -27,8 +27,8 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "snakerule.fullname" $ }}-gateway
-                port: { number: {{ $.Values.gateway.service.port }} }
+                name: {{ include "snakerule.fullname" $ }}-nginx
+                port: { number: {{ $.Values.nginx.service.port }} }
           {{- end }}
     {{- end }}
 {{- end }}

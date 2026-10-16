@@ -1,18 +1,6 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ include "snakerule.fullname" . }}-backend
-  labels:
-    {{- include "snakerule.labels" . | nindent 4 }}
-type: Opaque
-stringData:
-  AUTH_PASSWORD: {{ required "backend.env.authPassword must be provided" .Values.backend.env.authPassword | quote }}
-  LICENSE_ENCRYPTION_KEY: {{ required "backend.env.licenseEncryptionKey must be provided and kept stable" .Values.backend.env.licenseEncryptionKey | quote }}
-  JWT_SECRET: {{ required "backend.env.jwtSecret must be provided" .Values.backend.env.jwtSecret | quote }}
-  {{- if .Values.backend.env.pulseProductPublicKey }}
-  PULSE_PRODUCT_PUBLIC_KEY: {{ .Values.backend.env.pulseProductPublicKey | quote }}
-  {{- end }}
----
+{{- if ne (int .Values.backend.replicaCount) 1 -}}
+{{- fail "backend.replicaCount must remain 1 while rule and invocation repositories are in memory" -}}
+{{- end -}}
 apiVersion: v1
 kind: Service
 metadata:
@@ -46,6 +34,8 @@ spec:
       labels:
         {{- include "snakerule.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: backend
+      annotations:
+        checksum/secrets: {{ include "snakerule.secretChecksum" . | quote }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -72,17 +62,17 @@ spec:
             - { name: PULSE_HEARTBEAT_TIMEOUT_SECONDS, value: {{ .Values.backend.env.pulseHeartbeatTimeoutSeconds | quote }} }
             - name: AUTH_PASSWORD
               valueFrom:
-                secretKeyRef: { name: {{ include "snakerule.fullname" . }}-backend, key: AUTH_PASSWORD }
+                secretKeyRef: { name: {{ include "snakerule.secretName" . }}, key: AUTH_PASSWORD }
             - name: LICENSE_ENCRYPTION_KEY
               valueFrom:
-                secretKeyRef: { name: {{ include "snakerule.fullname" . }}-backend, key: LICENSE_ENCRYPTION_KEY }
+                secretKeyRef: { name: {{ include "snakerule.secretName" . }}, key: LICENSE_ENCRYPTION_KEY }
             - name: JWT_SECRET
               valueFrom:
-                secretKeyRef: { name: {{ include "snakerule.fullname" . }}-backend, key: JWT_SECRET }
-            {{- if .Values.backend.env.pulseProductPublicKey }}
+                secretKeyRef: { name: {{ include "snakerule.secretName" . }}, key: JWT_SECRET }
+            {{- if or .Values.backend.env.pulseProductPublicKey .Values.backend.env.pulseProductPublicKeyFromSecret }}
             - name: PULSE_PRODUCT_PUBLIC_KEY
               valueFrom:
-                secretKeyRef: { name: {{ include "snakerule.fullname" . }}-backend, key: PULSE_PRODUCT_PUBLIC_KEY }
+                secretKeyRef: { name: {{ include "snakerule.secretName" . }}, key: PULSE_PRODUCT_PUBLIC_KEY }
             {{- end }}
           volumeMounts:
             - { name: data, mountPath: /data }
@@ -113,6 +103,8 @@ metadata:
   name: {{ include "snakerule.fullname" . }}-data
   labels:
     {{- include "snakerule.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
 spec:
   accessModes:
     {{- toYaml .Values.backend.persistence.accessModes | nindent 4 }}

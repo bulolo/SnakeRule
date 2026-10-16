@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "snakerule.fullname" . }}-nginx
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    {{- include "snakerule.nginxConfig" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "snakerule.fullname" . }}-nginx
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+  {{- with .Values.nginx.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.nginx.service.type }}
+  ports:
+    - { name: http, port: {{ .Values.nginx.service.port }}, targetPort: http }
+  selector:
+    {{- include "snakerule.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: nginx
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "snakerule.fullname" . }}-nginx
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nginx
+spec:
+  replicas: {{ .Values.nginx.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "snakerule.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: nginx
+  template:
+    metadata:
+      labels:
+        {{- include "snakerule.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: nginx
+      annotations:
+        checksum/config: {{ include "snakerule.nginxConfig" . | sha256sum | quote }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: nginx
+          image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+          imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 80 }
+          volumeMounts:
+            - { name: config, mountPath: /etc/nginx/conf.d/default.conf, subPath: default.conf, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.nginx.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap: { name: {{ include "snakerule.fullname" . }}-nginx }

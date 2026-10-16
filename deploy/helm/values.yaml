@@ -7,6 +7,8 @@ backend:
   service: { port: 8081 }
   persistence: { enabled: true, storageClass: "", accessModes: [ReadWriteOnce], size: 2Gi }
   resources: {}
+  existingSecret: ""
+  secretChecksum: ""
   env:
     authEmail: superadmin@snakerule.cn
     authName: SuperAdmin
@@ -16,6 +18,7 @@ backend:
     licenseEncryptionKey: ""
     jwtSecret: ""
     pulseProductPublicKey: ""
+    pulseProductPublicKeyFromSecret: false
     pulseHeartbeatURL: https://pulse.szplanner.com/api/snakerule/v1/telemetry/heartbeat
     pulseHeartbeatIntervalSeconds: "240"
     pulseHeartbeatTimeoutSeconds: "30"
@@ -25,7 +28,7 @@ admin:
   image: { repository: snakerule-admin, tag: prod, pullPolicy: IfNotPresent }
   service: { port: 80 }
   resources: {}
-gateway:
+nginx:
   replicaCount: 1
   image: { repository: nginx, tag: 1.27-alpine, pullPolicy: IfNotPresent }
   service: { type: LoadBalancer, port: 80, annotations: {} }
