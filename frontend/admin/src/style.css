@@ -4612,7 +4612,7 @@ footer {
 .project-guide-result > p { margin: 7px 0; color: #748379; font-size: 10px; line-height: 1.65; }
 .project-guide-result code { padding: 1px 4px; border-radius: 4px; background: #edf4ef; color: #456b52; font: 10px "DM Mono",monospace; }
 .project-guide-result pre { overflow: auto; margin: 8px 0; padding: 10px; border-radius: 7px; background: #26382e; color: #e8f1ea; font: 10px/1.55 "DM Mono",monospace; }
-.project-invocation-modal { display: flex; width: min(1480px,96vw); height: min(90vh,1040px); max-height: 90vh; flex-direction: column; padding: 26px 30px 20px; }
+.project-invocation-modal { display: flex; width: min(1600px,98vw); height: min(90vh,1040px); max-height: 90vh; flex-direction: column; padding: 26px 30px 20px; }
 .project-invocation-modal > header { flex: none; padding-bottom: 18px; border-bottom: 1px solid #edf1ee; }
 .project-invocation-modal > header > div { min-width: 0; }
 .project-invocation-modal > header h2 { font-size: 23px; }
