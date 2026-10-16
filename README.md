@@ -265,6 +265,7 @@ A：当前不支持。仓储使用进程内缓存，请按单 API 副本部署�
 - [API 概览](./frontend/docs/docs/api/overview.md)
 - [项目结构](./frontend/docs/docs/guide/project-structure.md)
 - [系统架构](./docs/architecture.md)
+- [数据库备份与恢复](./docs/operations/database-backup-restore.md)
 - [开发路线图](./docs/todo.md)
 - [AI 决策扩展预研](./docs/research/jev-integration.md)
 

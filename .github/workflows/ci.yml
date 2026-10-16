@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "0.0.*"]
+  pull_request:
+    branches: [main, "0.0.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: snakerule_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d snakerule_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/snakerule_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/server/go.mod
+          cache-dependency-path: backend/server/go.sum
+      - name: Check formatting, vet, and build
+        run: make check-backend
+      - name: Run unit and PostgreSQL migration tests
+        working-directory: backend/server
+        run: go test ./...
+      - name: Verify generated SDK matches OpenAPI
+        run: |
+          make gen-sdk
+          git diff --exit-code -- frontend/admin/src/lib/sdk/generated.ts
+
+  admin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/admin/package-lock.json
+      - run: npm ci
+        working-directory: frontend/admin
+      - run: npm run build
+        working-directory: frontend/admin
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/docs/package-lock.json
+      - run: npm ci
+        working-directory: frontend/docs
+      - run: npm run build
+        working-directory: frontend/docs
