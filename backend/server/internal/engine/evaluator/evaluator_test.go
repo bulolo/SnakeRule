@@ -7,6 +7,25 @@ import (
 	"github.com/szplanner/snakerule/internal/domain"
 )
 
+func BenchmarkEvaluateNestedRules(b *testing.B) {
+	facts := map[string]any{
+		"order":    map[string]any{"amount": float64(12000)},
+		"customer": map[string]any{"isNew": true, "tier": "standard"},
+	}
+	condition := domain.Condition{All: []domain.Condition{
+		{Fact: "order.amount", Operator: "gte", Value: float64(10000)},
+		{Any: []domain.Condition{{Fact: "customer.tier", Operator: "equal", Value: "vip"}, {Fact: "customer.isNew", Operator: "eq", Value: true}}},
+		{Not: &domain.Condition{Fact: "customer.tier", Operator: "equal", Value: "blocked"}},
+	}}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Evaluate(condition, facts); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestEvaluateNestedConditions(t *testing.T) {
 	facts := map[string]any{
 		"order":    map[string]any{"amount": json.Number("12000")},

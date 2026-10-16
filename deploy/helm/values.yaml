@@ -21,6 +21,9 @@ backend:
     pulseHeartbeatIntervalSeconds: "240"
     pulseHeartbeatTimeoutSeconds: "30"
     logLevel: info
+    invocationRetentionDays: "30"
+    invocationCleanupIntervalSeconds: "3600"
+    invocationCleanupBatchSize: "500"
 database:
   image: { repository: postgres, tag: 16-alpine, pullPolicy: IfNotPresent }
   name: snakerule

@@ -12,15 +12,16 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Redis    RedisConfig    `mapstructure:"redis"`
-	JWT      JWTConfig      `mapstructure:"jwt"`
-	Auth     AuthConfig     `mapstructure:"auth"`
-	License  LicenseConfig  `mapstructure:"license"`
-	Pulse    PulseConfig    `mapstructure:"pulse"`
-	Log      LogConfig      `mapstructure:"log"`
-	Jev      JevConfig      `mapstructure:"jev"`
+	Server      ServerConfig     `mapstructure:"server"`
+	Database    DatabaseConfig   `mapstructure:"database"`
+	Redis       RedisConfig      `mapstructure:"redis"`
+	JWT         JWTConfig        `mapstructure:"jwt"`
+	Auth        AuthConfig       `mapstructure:"auth"`
+	License     LicenseConfig    `mapstructure:"license"`
+	Pulse       PulseConfig      `mapstructure:"pulse"`
+	Log         LogConfig        `mapstructure:"log"`
+	Jev         JevConfig        `mapstructure:"jev"`
+	Invocations InvocationConfig `mapstructure:"invocations"`
 }
 
 type ServerConfig struct {
@@ -72,6 +73,12 @@ type JevConfig struct {
 	TimeoutMs int    `mapstructure:"default_timeout_ms"`
 }
 
+type InvocationConfig struct {
+	RetentionDays       int `mapstructure:"retention_days"`
+	CleanupIntervalSecs int `mapstructure:"cleanup_interval_seconds"`
+	CleanupBatchSize    int `mapstructure:"cleanup_batch_size"`
+}
+
 func Load() (*Config, error) {
 	for _, path := range []string{".env", "../.env"} {
 		if _, err := os.Stat(path); err == nil {
@@ -89,6 +96,7 @@ func Load() (*Config, error) {
 		"server.port", "server.env", "database.url", "database.max_open_conns", "database.max_idle_conns",
 		"redis.url", "jwt.secret", "jwt.expires_in", "auth.email", "auth.name", "auth.password", "auth.session_ttl", "license.encryption_key", "pulse.heartbeat_url", "pulse.heartbeat_interval_seconds", "pulse.heartbeat_timeout_seconds", "log.level", "log.format",
 		"jev.api_url", "jev.api_key", "jev.default_model", "jev.default_timeout_ms",
+		"invocations.retention_days", "invocations.cleanup_interval_seconds", "invocations.cleanup_batch_size",
 	} {
 		if err := viper.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind config %s: %w", key, err)
@@ -110,6 +118,9 @@ func Load() (*Config, error) {
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.format", "json")
 	viper.SetDefault("jev.default_timeout_ms", 200)
+	viper.SetDefault("invocations.retention_days", 30)
+	viper.SetDefault("invocations.cleanup_interval_seconds", 3600)
+	viper.SetDefault("invocations.cleanup_batch_size", 500)
 
 	cfg := &Config{}
 	if err := viper.Unmarshal(cfg); err != nil {

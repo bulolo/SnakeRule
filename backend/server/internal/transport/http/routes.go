@@ -17,6 +17,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		writeRawJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
+	mux.Handle("GET /metrics", s.metricsHandler())
 	apiMux.HandleFunc("GET /api/v1/meta", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"version": appversion.Version})
 	})
@@ -66,7 +67,10 @@ func (s *Server) Handler() http.Handler {
 	apiMux.Handle("GET /api/v1/rulesets/{id}", s.requireCurrentProjectAccess(http.HandlerFunc(s.getRuleset), false))
 	apiMux.Handle("PUT /api/v1/rulesets/{id}", s.requireCurrentProjectAccess(http.HandlerFunc(s.saveRuleset), true))
 	apiMux.Handle("DELETE /api/v1/rulesets/{id}", s.requireCurrentProjectAccess(http.HandlerFunc(s.deleteRuleset), true))
+	apiMux.Handle("GET /api/v1/rulesets/{id}/versions", s.requireCurrentProjectAccess(http.HandlerFunc(s.listRulesetVersions), false))
+	apiMux.Handle("POST /api/v1/rulesets/{id}/publish", s.requireCurrentProjectAccess(http.HandlerFunc(s.publishRuleset), true))
+	apiMux.Handle("POST /api/v1/rulesets/{id}/versions/{version}/rollback", s.requireCurrentProjectAccess(http.HandlerFunc(s.rollbackRuleset), true))
 	apiMux.Handle("POST /api/v1/engine/evaluate", s.requireSessionOrProjectKey(http.HandlerFunc(s.evaluate)))
 	mux.Handle("/api/v1/", apiMux)
-	return s.recover(s.accessLog(mux))
+	return s.recover(s.accessLog(s.measureRequests(mux)))
 }

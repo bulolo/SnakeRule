@@ -8,6 +8,8 @@ type InvocationLog struct {
 	OrganizationID string              `json:"organization_id"`
 	ProjectID      string              `json:"project_id"`
 	RulesetID      string              `json:"ruleset_id,omitempty"`
+	RulesetVersion int                 `json:"ruleset_version,omitempty"`
+	RequestID      string              `json:"request_id"`
 	Method         string              `json:"method"`
 	Path           string              `json:"path"`
 	Source         string              `json:"source"`

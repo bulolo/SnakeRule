@@ -89,6 +89,41 @@ func (r *PersistentUserRepository) SeedSuperAdmin(email, name, password string) 
 	r.items[id] = domain.User{ID: id, Email: email, Name: name, Role: "superadmin", OrganizationIDs: []string{"default"}, CreatedAt: time.Now().UTC(), PasswordSalt: salt, PasswordHash: hashPassword(password, salt)}
 	return r.persist()
 }
+
+// SeedDefaultOrganizationAdmin creates the initial organization administrator
+// once. Its username is a login alias; the account still has a valid email for
+// user management and notifications.
+func (r *PersistentUserRepository) SeedDefaultOrganizationAdmin() error {
+	const username, email, password = "admin", "admin@snakerule.cn", "admin123"
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, u := range r.items {
+		if strings.EqualFold(u.Username, username) || strings.EqualFold(u.Email, email) {
+			if strings.EqualFold(u.Username, username) && strings.EqualFold(u.Email, email) {
+				return nil
+			}
+			return errors.New("default organization admin username or email is already in use")
+		}
+	}
+	saltBytes := make([]byte, 16)
+	if _, err := rand.Read(saltBytes); err != nil {
+		return err
+	}
+	salt := base64.RawStdEncoding.EncodeToString(saltBytes)
+	idBytes := make([]byte, 12)
+	if _, err := rand.Read(idBytes); err != nil {
+		return err
+	}
+	id := base64.RawURLEncoding.EncodeToString(idBytes)
+	r.items[id] = domain.User{
+		ID: id, Username: username, Email: email, Name: "组织管理员",
+		Role: "organization_admin", OrganizationIDs: []string{DefaultOrganizationID},
+		OrganizationRoles: map[string]string{DefaultOrganizationID: "organization_admin"},
+		CreatedAt:         time.Now().UTC(), PasswordSalt: salt,
+		PasswordHash: hashPassword(password, salt),
+	}
+	return r.persist()
+}
 func (r *PersistentUserRepository) List() []domain.User {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -118,7 +153,22 @@ func (r *PersistentUserRepository) FindByID(id string) (domain.User, bool) {
 	return u, ok
 }
 func (r *PersistentUserRepository) Verify(email, password string) (domain.User, bool) {
-	u, ok := r.FindByEmail(email)
+	identifier := strings.TrimSpace(email)
+	u, ok := r.FindByEmail(identifier)
+	if !ok {
+		r.mu.RLock()
+		matches := make([]domain.User, 0, 1)
+		for _, candidate := range r.items {
+			if candidate.Username != "" && strings.EqualFold(candidate.Username, identifier) {
+				matches = append(matches, candidate)
+			}
+		}
+		r.mu.RUnlock()
+		if len(matches) != 1 {
+			return domain.User{}, false
+		}
+		u, ok = matches[0], true
+	}
 	if !ok {
 		return domain.User{}, false
 	}
@@ -134,6 +184,9 @@ func (r *PersistentUserRepository) Save(u domain.User, password string) error {
 	for id, current := range r.items {
 		if id != u.ID && strings.EqualFold(current.Email, u.Email) {
 			return errors.New("email already exists")
+		}
+		if id != u.ID && u.Username != "" && strings.EqualFold(current.Username, u.Username) {
+			return errors.New("username already exists")
 		}
 	}
 	if u.ID == "" {
@@ -154,6 +207,9 @@ func (r *PersistentUserRepository) Save(u domain.User, password string) error {
 	} else if old, ok := r.items[u.ID]; ok {
 		u.PasswordHash = old.PasswordHash
 		u.PasswordSalt = old.PasswordSalt
+		if u.Username == "" {
+			u.Username = old.Username
+		}
 	} else {
 		return errors.New("password is required")
 	}

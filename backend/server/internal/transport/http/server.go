@@ -30,6 +30,7 @@ type Server struct {
 	jwtSigningKey    []byte
 	database         *sql.DB
 	environment      string
+	metrics          *requestMetrics
 }
 
 func (s *Server) SetRuntimeInfo(database *sql.DB, environment string) {
@@ -38,7 +39,7 @@ func (s *Server) SetRuntimeInfo(database *sql.DB, environment string) {
 }
 
 func NewServer(rulesets *service.RulesetService, engine *service.Engine, logger *slog.Logger, auth AuthConfig, license *licensing.Manager, organizations *service.OrganizationService) *Server {
-	return &Server{rulesets: rulesets, engine: engine, logger: logger, auth: auth, sessions: newSessionStore(auth.SessionTTL, auth.SessionStoreKey), license: license, organizations: organizations, jwtSigningKey: auth.JWTSigningKey}
+	return &Server{rulesets: rulesets, engine: engine, logger: logger, auth: auth, sessions: newSessionStore(auth.SessionTTL, auth.SessionStoreKey), license: license, organizations: organizations, jwtSigningKey: auth.JWTSigningKey, metrics: newRequestMetrics()}
 }
 
 func (s *Server) SetAlertChannelRepository(repository repo.AlertChannelRepository) {

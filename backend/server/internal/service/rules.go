@@ -28,6 +28,33 @@ func (s *RulesetService) Get(ctx context.Context, id string) (domain.Ruleset, er
 func (s *RulesetService) Delete(ctx context.Context, id string) error {
 	return s.repository.Delete(ctx, id)
 }
+
+func (s *RulesetService) ListVersions(ctx context.Context, id string) ([]domain.RulesetVersion, error) {
+	return s.repository.ListVersions(ctx, id)
+}
+
+func (s *RulesetService) Publish(ctx context.Context, id, actor, note string) (domain.RulesetVersion, error) {
+	item, err := s.repository.Get(ctx, id)
+	if err != nil {
+		return domain.RulesetVersion{}, err
+	}
+	if _, err := normalizeRuleset(item); err != nil {
+		return domain.RulesetVersion{}, err
+	}
+	return s.repository.Publish(ctx, id, actor, note)
+}
+
+func (s *RulesetService) Rollback(ctx context.Context, id string, version int, actor string) (domain.RulesetVersion, error) {
+	item, err := s.repository.GetVersion(ctx, id, version)
+	if err != nil {
+		return domain.RulesetVersion{}, err
+	}
+	restored := item.Snapshot
+	if _, err := normalizeRuleset(restored); err != nil {
+		return domain.RulesetVersion{}, err
+	}
+	return s.repository.Rollback(ctx, id, version, actor)
+}
 func (s *RulesetService) Save(ctx context.Context, item domain.Ruleset) error {
 	item, err := normalizeRuleset(item)
 	if err != nil {
@@ -65,7 +92,7 @@ type Engine struct{ rulesets repo.RulesetRepository }
 
 func NewEngine(rulesets repo.RulesetRepository) *Engine { return &Engine{rulesets: rulesets} }
 func (s *Engine) Evaluate(ctx context.Context, id string, facts map[string]any) (domain.Decision, error) {
-	set, err := s.rulesets.Get(ctx, id)
+	set, err := s.rulesets.GetPublished(ctx, id)
 	if err != nil {
 		return domain.Decision{}, err
 	}
@@ -77,11 +104,12 @@ func (s *Engine) EvaluateDraft(set domain.Ruleset, facts map[string]any) (domain
 	if err != nil {
 		return domain.Decision{}, err
 	}
+	set.PublishedVersion = 0
 	return evaluateRuleset(set, facts)
 }
 
 func evaluateRuleset(set domain.Ruleset, facts map[string]any) (domain.Decision, error) {
-	decision := domain.Decision{RulesetID: set.ID, Version: set.Version, HitRules: []domain.MatchedRule{}}
+	decision := domain.Decision{RulesetID: set.ID, Version: set.Version, PublishedVersion: set.PublishedVersion, HitRules: []domain.MatchedRule{}}
 	if !set.Enabled {
 		return decision, nil
 	}

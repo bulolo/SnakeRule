@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { snakeRuleApi, type InvocationLog, type Rule, type RuleAlert, type Ruleset } from "../lib/sdk/generated";
+import * as sdk from "../lib/sdk";
+import type { InvocationLog, Rule, RuleAlert, Ruleset } from "../lib/sdk";
 import { CustomSelect } from "./common";
 
 export type Project = {
   id: string; name: string; slug: string; description?: string; icon?: string;
 };
 const projectIcons = ["◈", "🛒", "🛡️", "📦", "⚙️", "💳"];
-type APIKey = { id: string; name: string; prefix: string; type?: "apikey" | "jwt"; credential_kind?: "api_key" | "access_token" | "signing_key"; expires_at?: string; created_at: string };
+type APIKey = { id: string; name: string; prefix: string; type?: "apikey" | "jwt"; credential_kind?: "api_key" | "access_token" | "signing_key"; expires_at?: string | null; created_at: string };
 type ProjectMember = { user: { id: string; name: string; email: string }; role: string };
 
 function ProjectMembersPanel({ projectID }: { projectID: string }) {
@@ -19,10 +20,10 @@ function ProjectMembersPanel({ projectID }: { projectID: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const refresh = useCallback(async () => {
-    const result = await snakeRuleApi.listProjectMembers(projectID);
+    const result = await sdk.listProjectMembers(projectID);
     setMembers(result.list ?? []); setCanManage(result.can_manage);
     if (result.can_manage) {
-      const users = await snakeRuleApi.listProjectMemberCandidates(projectID);
+      const users = await sdk.listProjectMemberCandidates(projectID);
       setCandidates(users.list ?? []);
     }
   }, [projectID]);
@@ -31,9 +32,9 @@ function ProjectMembersPanel({ projectID }: { projectID: string }) {
   async function changeMember(userID: string, method: string, role?: string) {
     setBusy(true); setError("");
     try {
-      if (method === "POST") await snakeRuleApi.addProjectMember(projectID, { user_id: userID, role: role as "project_admin" | "project_member" });
-      else if (method === "PUT") await snakeRuleApi.updateProjectMember(projectID, userID, role as "project_admin" | "project_member");
-      else await snakeRuleApi.removeProjectMember(projectID, userID);
+      if (method === "POST") await sdk.addProjectMember(projectID, { user_id: userID, role: role as "project_admin" | "project_member" });
+      else if (method === "PUT") await sdk.updateProjectMember(projectID, userID, { role: role as "project_admin" | "project_member" });
+      else await sdk.removeProjectMember(projectID, userID);
       await refresh(); setPickID(""); toast.success(method === "DELETE" ? "成员已移出项目" : "项目成员已更新");
     } catch (e) { setError(e instanceof Error ? e.message : "更新成员失败"); }
     finally { setBusy(false); }
@@ -79,6 +80,7 @@ export function ProjectsPanel({
   const [selectedInvocation, setSelectedInvocation] = useState<InvocationLog | null>(null);
   const [invocationDetailTab, setInvocationDetailTab] = useState<"summary" | "request" | "response" | "rules">("summary");
   const [invocationLogsBusy, setInvocationLogsBusy] = useState(false);
+  const [invocationFilters, setInvocationFilters] = useState({ request_id: "", source: "", outcome: "", since: "", until: "" });
   const [keyName, setKeyName] = useState("服务端调用");
   const [keyType, setKeyType] = useState<"apikey" | "jwt">("apikey");
   const [jwtSigningKeyMode, setJwtSigningKeyMode] = useState(false);
@@ -122,12 +124,12 @@ export function ProjectsPanel({
     if (!activeProject) return [];
     let loadedRulesets: Ruleset[] = [];
     try {
-      const result = await snakeRuleApi.listRulesets();
+      const result = await sdk.listRulesets();
       loadedRulesets = result.list ?? [];
       setRulesets(loadedRulesets);
     } catch (e) { toast.error("读取项目规则集失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     try {
-      const result = await snakeRuleApi.listProjectCredentials(activeProject.id);
+      const result = await sdk.listProjectCredentials(activeProject.id);
       setKeys(result.list ?? []);
     } catch (e) { toast.error("读取项目 API Key 失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     return loadedRulesets;
@@ -137,7 +139,7 @@ export function ProjectsPanel({
   async function createProject(template: "" | "ecommerce") {
     setBusy(true);
     try {
-      const result = await snakeRuleApi.createProject({
+      const result = await sdk.createProject({
         name: template ? "电商订单风控演示" : name.trim(), slug: slug.trim(), description: template ? "包含订单风控规则和项目 API Key 的完整演示项目。" : description.trim(), template,
       });
       await onRefresh(); await onSelect(result.id);
@@ -152,7 +154,7 @@ export function ProjectsPanel({
     if (!target) return;
     setBusy(true);
     try {
-      await snakeRuleApi.updateProject(target.id, { name: editName.trim(), slug: editSlug.trim(), description: description.trim(), icon: editIcon });
+      await sdk.updateProject(target.id, { name: editName.trim(), slug: editSlug.trim(), description: description.trim(), icon: editIcon });
       await onRefresh(); setEditingID(""); toast.success("项目资料已更新。");
     } catch (e) { toast.error("更新项目失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     finally { setBusy(false); }
@@ -161,25 +163,25 @@ export function ProjectsPanel({
     if (!activeProject) return;
     setBusy(true); setNewSecret("");
     try {
-      const result = await snakeRuleApi.createProjectCredential(activeProject.id, { name: keyName.trim(), type: keyType, signing_key: keyType === "jwt" && jwtSigningKeyMode, expires_at: keyExpiresAt ? new Date(keyExpiresAt).toISOString() : undefined });
+      const result = await sdk.createProjectCredential(activeProject.id, { name: keyName.trim(), type: keyType, signing_key: keyType === "jwt" && jwtSigningKeyMode, expires_at: keyExpiresAt ? new Date(keyExpiresAt).toISOString() : undefined });
       setNewCredentialKind(result.item.credential_kind ?? "api_key"); setNewCredentialID(result.item.id); setNewSecret(result.token ?? result.signing_secret ?? result.secret ?? ""); setKeyCreateMode(true); await refreshDetail();
     } catch (e) { toast.error(`创建${keyType === "jwt" ? " JWT" : " API Key"}失败`, { description: e instanceof Error ? e.message : "请求失败" }); }
     finally { setBusy(false); }
   }
   async function revokeKey(key: APIKey) {
     setBusy(true);
-    try { await snakeRuleApi.revokeProjectCredential(projectID, key.id); await refreshDetail(); }
+    try { await sdk.revokeProjectCredential(projectID, key.id); await refreshDetail(); }
     catch (e) { toast.error("撤销 API Key 失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     finally { setBusy(false); }
   }
-  async function openInvocationLogs(page = 1, rulesetID = selectedRuleset?.id) {
+  async function openInvocationLogs(page = 1, rulesetID = selectedRuleset?.id, filters = invocationFilters) {
     if (!rulesetID) return;
     setActiveRulesetTab("invocations");
     setInvocationLogs([]); setInvocationLogsTotal(0); setSelectedInvocation(null);
     setInvocationLogsBusy(true);
     setInvocationPage(page);
     try {
-      const result = await snakeRuleApi.listProjectInvocations(projectID, { page, size: 20, is_pager: 1, ruleset_id: rulesetID });
+      const result = await sdk.listProjectInvocations(projectID, { page, size: 20, is_pager: 1, ruleset_id: rulesetID, request_id: filters.request_id.trim() || undefined, source: (filters.source || undefined) as "designer_simulation" | "project_api" | "management" | undefined, outcome: (filters.outcome || undefined) as "matched" | "unmatched" | "error" | undefined, since: filters.since.trim() || undefined, until: filters.until.trim() || undefined });
       setInvocationLogs(result.list ?? []);
       setInvocationLogsTotal(result.pagination?.total ?? 0);
     } catch (e) {
@@ -188,7 +190,7 @@ export function ProjectsPanel({
   }
   async function removeProject(project: Project) {
     setBusy(true);
-    try { await snakeRuleApi.deleteProject(project.id); setConfirmProjectDelete(""); await onRefresh(); setProjectDetailOpen(false); toast.success("项目已删除。"); }
+    try { await sdk.deleteProject(project.id); setConfirmProjectDelete(""); await onRefresh(); setProjectDetailOpen(false); toast.success("项目已删除。"); }
     catch (e) { toast.error("删除项目失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     finally { setBusy(false); }
   }
@@ -196,7 +198,7 @@ export function ProjectsPanel({
     const key = `ruleset:${set.id}`;
     setToggleBusy(key);
     try {
-      await snakeRuleApi.updateRuleset({ ...set, enabled: !set.enabled });
+      await sdk.updateRuleset(set.id, { ...set, enabled: !set.enabled });
       await refreshDetail();
       toast.success(`规则集已${set.enabled ? "停用" : "启用"}`);
     } catch (e) { const message = e instanceof Error ? e.message : "更新规则集状态失败"; toast.error("更新规则集状态失败", { description: message }); }
@@ -207,7 +209,7 @@ export function ProjectsPanel({
     setToggleBusy(key);
     try {
       const updated = { ...set, rules: set.rules.map((rule) => rule.id === ruleID ? { ...rule, enabled: !rule.enabled } : rule) };
-      await snakeRuleApi.updateRuleset(updated);
+      await sdk.updateRuleset(updated.id, updated);
       await refreshDetail();
       const rule = set.rules.find((item) => item.id === ruleID);
       toast.success(`规则已${rule?.enabled ? "停用" : "启用"}`);
@@ -229,7 +231,7 @@ export function ProjectsPanel({
         alert: defaultAlertEnabled ? { enabled: true, channel_ids: defaultAlertChannelIDs } : undefined,
         rules: alertRuleset.rules.map((rule) => applyDefaultToAll ? { ...rule, alert: undefined } : rule),
       };
-      await snakeRuleApi.updateRuleset(updated);
+      await sdk.updateRuleset(updated.id, updated);
       await refreshDetail();
       setAlertRuleset(null);
       toast.success(applyDefaultToAll ? "默认通知已保存并应用到全部规则" : "规则集默认通知已保存");
@@ -328,13 +330,14 @@ export function ProjectsPanel({
             })}</div> : <div className="table-empty"><b>这个规则集还没有规则</b><small>使用设计器添加第一条规则。</small></div>}
             </> : <section className="ruleset-invocations-panel">
               <div className="invocation-toolbar"><div><b>调用日志</b><small>{selectedRuleset.name} · 共 {invocationLogsTotal} 条</small></div><button className="secondary" disabled={invocationLogsBusy} onClick={() => void openInvocationLogs(invocationPage, selectedRuleset.id)}>↻ 刷新</button></div>
+              <div className="invocation-filter-row"><input aria-label="请求 ID" placeholder="请求 ID" value={invocationFilters.request_id} onChange={(event) => setInvocationFilters((value) => ({ ...value, request_id: event.target.value }))} /><CustomSelect ariaLabel="调用来源" value={invocationFilters.source} options={[{ value: "", label: "全部来源" }, { value: "designer_simulation", label: "设计器模拟" }, { value: "project_api", label: "真实 API" }, { value: "management", label: "管理端会话" }]} onChange={(source) => setInvocationFilters((value) => ({ ...value, source }))} /><CustomSelect ariaLabel="执行结果" value={invocationFilters.outcome} options={[{ value: "", label: "全部结果" }, { value: "matched", label: "命中" }, { value: "unmatched", label: "未命中" }, { value: "error", label: "调用错误" }]} onChange={(outcome) => setInvocationFilters((value) => ({ ...value, outcome }))} /><input aria-label="开始时间" placeholder="开始时间 RFC3339" value={invocationFilters.since} onChange={(event) => setInvocationFilters((value) => ({ ...value, since: event.target.value }))} /><input aria-label="结束时间" placeholder="结束时间 RFC3339" value={invocationFilters.until} onChange={(event) => setInvocationFilters((value) => ({ ...value, until: event.target.value }))} /><button className="primary" disabled={invocationLogsBusy} onClick={() => void openInvocationLogs(1, selectedRuleset.id)}>筛选</button><button className="quiet" disabled={invocationLogsBusy} onClick={() => { setInvocationFilters({ request_id: "", source: "", outcome: "", since: "", until: "" }); void openInvocationLogs(1, selectedRuleset.id, { request_id: "", source: "", outcome: "", since: "", until: "" }); }}>重置</button></div>
               {invocationLogsBusy ? <div className="table-empty invocation-empty"><b>正在读取调用日志…</b></div> : invocationLogs.length ? <div className="project-invocation-table-wrap"><table className="project-invocation-table"><thead><tr><th>时间</th><th>执行结果</th><th>来源</th><th>请求详情</th></tr></thead><tbody>{invocationLogs.map((item) => {
                 const ok = item.status_code >= 200 && item.status_code < 300;
                 return <tr key={item.id}>
                   <td className="invocation-time"><b>{new Date(item.created_at).toLocaleDateString("zh-CN")}</b><small>{new Date(item.created_at).toLocaleTimeString("zh-CN")}</small></td>
                   <td><div className="invocation-outcome"><i className={ok ? item.matched ? "matched" : "unmatched" : "failed"} /><div><b>{!ok ? `调用失败 · HTTP ${item.status_code}` : item.matched ? `命中 ${item.hit_rules?.length ?? 0} 条规则` : "执行成功 · 无规则命中"}</b></div></div></td>
                   <td><span className={`invocation-source ${item.source === "designer_simulation" ? "simulation" : item.source === "project_api" ? "real" : "management"}`}>{item.source === "designer_simulation" ? "设计器模拟" : item.source === "project_api" ? "真实 API" : "管理端调用"}</span><small className="invocation-credential">{item.credential_type === "jwt" ? "JWT" : item.credential_type === "apikey" ? "API Key" : "管理端会话"}</small></td>
-                  <td><div className="invocation-request"><b className={ok ? "http-ok" : "http-error"}>HTTP {item.status_code}</b><small>{item.duration_ms < 1 ? "<1" : item.duration_ms} ms</small><button className="invocation-open-detail" onClick={() => { setInvocationDetailTab("summary"); setSelectedInvocation(item); }}>查看详情 <span>→</span></button></div></td>
+                  <td><div className="invocation-request"><b className={ok ? "http-ok" : "http-error"}>HTTP {item.status_code}</b><small>{item.duration_ms < 1 ? "<1" : item.duration_ms} ms · {item.ruleset_version ? `发布 v${item.ruleset_version}` : "草稿"}</small>{item.request_id && <code title={item.request_id}>{item.request_id.slice(0, 10)}</code>}<button className="invocation-open-detail" onClick={() => { setInvocationDetailTab("summary"); setSelectedInvocation(item); }}>查看详情 <span>→</span></button></div></td>
                 </tr>;
               })}</tbody></table></div> : <div className="table-empty invocation-empty"><b>暂无此规则集的调用记录</b><small>在设计器中模拟运行，或通过项目 API 调用该规则集后，记录会显示在这里。</small></div>}
               <div className="project-invocation-pagination"><span>第 {invocationPage} / {Math.max(1, Math.ceil(invocationLogsTotal / 20))} 页</span><button className="secondary" disabled={invocationLogsBusy || invocationPage <= 1} onClick={() => void openInvocationLogs(invocationPage - 1, selectedRuleset.id)}>上一页</button><button className="secondary" disabled={invocationLogsBusy || invocationPage >= Math.ceil(invocationLogsTotal / 20)} onClick={() => void openInvocationLogs(invocationPage + 1, selectedRuleset.id)}>下一页</button></div>
@@ -351,9 +354,9 @@ export function ProjectsPanel({
     {editingID && <div className="project-modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingID(""); }}><section className="project-modal project-edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-project-title"><header><div><small>PROJECT SETTINGS</small><h2 id="edit-project-title">编辑项目</h2><p>更新项目名称、Slug 和说明。</p></div><button className="quiet" onClick={() => setEditingID("")} aria-label="关闭">×</button></header><div className="project-create-fields"><label>项目图标<div className="project-icon-picker">{projectIcons.map((icon) => <button type="button" key={icon} className={editIcon === icon ? "selected" : ""} onClick={() => setEditIcon(icon)}>{icon}</button>)}</div></label><label>项目名称<input value={editName} onChange={(event) => setEditName(event.target.value)} placeholder="项目名称" /></label><label>Slug<input value={editSlug} onChange={(event) => setEditSlug(event.target.value.toLowerCase())} placeholder="project-slug" /></label><label>说明<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="项目说明" /></label></div><footer><button className="quiet" onClick={() => setEditingID("")}>取消</button><button className="primary" disabled={busy || !editName.trim() || !editSlug.trim()} onClick={() => void saveProject()}>{busy ? "保存中…" : "保存项目"}</button></footer></section></div>}
     {selectedInvocation && <div className="project-modal-overlay invocation-detail-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedInvocation(null); }}>
       <section className="project-modal invocation-detail-modal" role="dialog" aria-modal="true" aria-labelledby="invocation-detail-title">
-        <header><div><small>INVOCATION DETAIL</small><h2 id="invocation-detail-title">{selectedInvocation.matched ? "规则命中" : selectedInvocation.status_code >= 200 && selectedInvocation.status_code < 300 ? "执行成功，未命中规则" : "调用失败"}</h2><p>{selectedInvocation.method || "POST"} {selectedInvocation.path || "/api/v1/engine/evaluate"} · HTTP {selectedInvocation.status_code} · {selectedInvocation.duration_ms < 1 ? "<1" : selectedInvocation.duration_ms} ms · {new Date(selectedInvocation.created_at).toLocaleString("zh-CN")}</p></div><button className="quiet" onClick={() => setSelectedInvocation(null)} aria-label="关闭详情">×</button></header>
+        <header><div><small>INVOCATION DETAIL</small><h2 id="invocation-detail-title">{selectedInvocation.matched ? "规则命中" : selectedInvocation.status_code >= 200 && selectedInvocation.status_code < 300 ? "执行成功，未命中规则" : "调用失败"}</h2><p>{selectedInvocation.method || "POST"} {selectedInvocation.path || "/api/v1/engine/evaluate"} · HTTP {selectedInvocation.status_code} · {selectedInvocation.duration_ms < 1 ? "<1" : selectedInvocation.duration_ms} ms · {new Date(selectedInvocation.created_at).toLocaleString("zh-CN")} · {selectedInvocation.ruleset_version ? `发布 v${selectedInvocation.ruleset_version}` : "草稿模拟"} · 请求 ID {selectedInvocation.request_id || "—"}</p></div><button className="quiet" onClick={() => setSelectedInvocation(null)} aria-label="关闭详情">×</button></header>
         <nav className="invocation-detail-tabs" aria-label="调用日志详情"><button className={invocationDetailTab === "summary" ? "active" : ""} onClick={() => setInvocationDetailTab("summary")}>概览</button><button className={invocationDetailTab === "request" ? "active" : ""} onClick={() => setInvocationDetailTab("request")}>请求</button><button className={invocationDetailTab === "response" ? "active" : ""} onClick={() => setInvocationDetailTab("response")}>响应</button><button className={invocationDetailTab === "rules" ? "active" : ""} onClick={() => setInvocationDetailTab("rules")}>命中规则 <span>{selectedInvocation.hit_rules?.length ?? 0}</span></button></nav>
-        <div className="invocation-detail-content">{invocationDetailTab === "summary" ? <dl className="invocation-summary-grid"><div><dt>执行结果</dt><dd>{selectedInvocation.status_code < 200 || selectedInvocation.status_code >= 300 ? "调用失败" : selectedInvocation.matched ? `命中 ${selectedInvocation.hit_rules?.length ?? 0} 条规则` : "成功，未命中规则"}</dd></div><div><dt>来源</dt><dd>{selectedInvocation.source === "designer_simulation" ? "设计器模拟" : selectedInvocation.source === "project_api" ? "真实 API" : "管理端会话"}</dd></div><div><dt>HTTP 状态</dt><dd>{selectedInvocation.status_code}</dd></div><div><dt>耗时</dt><dd>{selectedInvocation.duration_ms < 1 ? "<1" : selectedInvocation.duration_ms} ms</dd></div><div><dt>凭据类型</dt><dd>{selectedInvocation.credential_type === "jwt" ? "JWT" : selectedInvocation.credential_type === "apikey" ? "API Key" : "管理端会话"}</dd></div><div><dt>请求地址</dt><dd>{selectedInvocation.method || "POST"} {selectedInvocation.path || "/api/v1/engine/evaluate"}</dd></div></dl> : invocationDetailTab === "request" ? <section className="invocation-payload"><header><b>请求体</b><small>敏感字段已隐藏</small></header><pre>{selectedInvocation.request_body || "此旧日志没有保存请求体，请重新调用规则集以查看。"}</pre></section> : invocationDetailTab === "response" ? <section className="invocation-payload"><header><b>响应体</b><small>规则引擎返回</small></header><pre>{selectedInvocation.response_body || "此旧日志没有保存响应体，请重新调用规则集以查看。"}</pre></section> : <section className="invocation-payload invocation-rule-results"><header><b>命中规则</b><small>{selectedInvocation.hit_rules?.length ?? 0} 条</small></header>{selectedInvocation.hit_rules?.length ? <ul>{selectedInvocation.hit_rules.map((rule) => <li key={rule.rule_id}><b>{rule.name}</b><code>{rule.rule_id}</code></li>)}</ul> : <p>此次调用没有命中规则。</p>}</section>}</div>
+        <div className="invocation-detail-content">{invocationDetailTab === "summary" ? <dl className="invocation-summary-grid"><div><dt>执行结果</dt><dd>{selectedInvocation.status_code < 200 || selectedInvocation.status_code >= 300 ? "调用失败" : selectedInvocation.matched ? `命中 ${selectedInvocation.hit_rules?.length ?? 0} 条规则` : "成功，未命中规则"}</dd></div><div><dt>来源</dt><dd>{selectedInvocation.source === "designer_simulation" ? "设计器模拟" : selectedInvocation.source === "project_api" ? "真实 API" : "管理端会话"}</dd></div><div><dt>HTTP 状态</dt><dd>{selectedInvocation.status_code}</dd></div><div><dt>耗时</dt><dd>{selectedInvocation.duration_ms < 1 ? "<1" : selectedInvocation.duration_ms} ms</dd></div><div><dt>发布版本</dt><dd>{selectedInvocation.ruleset_version ? `v${selectedInvocation.ruleset_version}` : "草稿模拟"}</dd></div><div><dt>请求 ID</dt><dd>{selectedInvocation.request_id || "—"}</dd></div><div><dt>凭据类型</dt><dd>{selectedInvocation.credential_type === "jwt" ? "JWT" : selectedInvocation.credential_type === "apikey" ? "API Key" : "管理端会话"}</dd></div><div><dt>请求地址</dt><dd>{selectedInvocation.method || "POST"} {selectedInvocation.path || "/api/v1/engine/evaluate"}</dd></div></dl> : invocationDetailTab === "request" ? <section className="invocation-payload"><header><b>请求体</b><small>敏感字段已隐藏</small></header><pre>{selectedInvocation.request_body || "此旧日志没有保存请求体，请重新调用规则集以查看。"}</pre></section> : invocationDetailTab === "response" ? <section className="invocation-payload"><header><b>响应体</b><small>规则引擎返回</small></header><pre>{selectedInvocation.response_body || "此旧日志没有保存响应体，请重新调用规则集以查看。"}</pre></section> : <section className="invocation-payload invocation-rule-results"><header><b>命中规则</b><small>{selectedInvocation.hit_rules?.length ?? 0} 条</small></header>{selectedInvocation.hit_rules?.length ? <ul>{selectedInvocation.hit_rules.map((rule) => <li key={rule.rule_id}><b>{rule.name}</b><code>{rule.rule_id}</code></li>)}</ul> : <p>此次调用没有命中规则。</p>}</section>}</div>
         <footer><button className="primary" onClick={() => setSelectedInvocation(null)}>关闭</button></footer>
       </section>
     </div>}

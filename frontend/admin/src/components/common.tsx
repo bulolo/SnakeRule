@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { snakeRuleApi } from "../lib/sdk/generated";
+import * as sdk from "../lib/sdk";
 
 export function CustomSelect({
   value,
@@ -98,7 +98,7 @@ export function LoginScreen({
     setBusy(true);
     setError("");
     try {
-      const session = await snakeRuleApi.login({
+      const session = await sdk.login({
         email: email.trim(),
         password,
       });
@@ -125,15 +125,15 @@ export function LoginScreen({
         </div>
         <form onSubmit={submit}>
           <label>
-            邮箱
+            邮箱或用户名
             <input
-              type="email"
-              autoComplete="email"
+              type="text"
+              autoComplete="username"
               autoFocus
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="输入管理员邮箱"
+              placeholder="输入邮箱或用户名"
             />
           </label>
           <label>

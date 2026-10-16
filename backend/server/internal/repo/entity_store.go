@@ -27,7 +27,7 @@ func syncEntity(tx *sql.Tx, key, payload string) error {
 		},
 		"rulesets": {
 			`DELETE FROM rulesets`,
-			`INSERT INTO rulesets(organization_id,project_id,id,name,version,enabled,document) SELECT split_part(scope.key,'/',1), split_part(scope.key,'/',2), item.key, item.value->>'name', COALESCE(item.value->>'version',''), COALESCE((item.value->>'enabled')::boolean,true), item.value FROM jsonb_each($1::jsonb) scope CROSS JOIN LATERAL jsonb_each(scope.value) item`,
+			`INSERT INTO rulesets(organization_id,project_id,id,name,version,enabled,published_version,document) SELECT split_part(scope.key,'/',1), split_part(scope.key,'/',2), item.key, item.value->>'name', COALESCE(item.value->>'version',''), COALESCE((item.value->>'enabled')::boolean,true), COALESCE((item.value->>'published_version')::integer,0), item.value FROM jsonb_each($1::jsonb) scope CROSS JOIN LATERAL jsonb_each(scope.value) item`,
 		},
 		"project-keys": {
 			`DELETE FROM project_credentials`,

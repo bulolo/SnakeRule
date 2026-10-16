@@ -1,4 +1,4 @@
-.PHONY: help dev-init check-dev-env dev dev-up dev-open dev-down dev-clean dev-build dev-rebuild dev-restart dev-restart-backend dev-logs dev-logs-backend dev-logs-admin dev-logs-nginx dev-logs-docs dev-status dev-backend run-backend build-backend format check-backend check-all test gen-sdk set-version docs-install docs-dev docs-build docs-open infra-up infra-down infra-logs docker-up docker-down prod-init check-prod-env prod-build prod-up prod-down helm-lint helm-template helm-install helm-uninstall publish-github publish-codeup publish-all
+.PHONY: help dev-init check-dev-env dev dev-up dev-open dev-down dev-clean dev-build dev-rebuild dev-restart dev-restart-backend dev-logs dev-logs-backend dev-logs-admin dev-logs-nginx dev-logs-docs dev-status dev-backend run-backend build-backend format check-backend check-sdk check-all test gen-sdk set-version docs-install docs-dev docs-build docs-open infra-up infra-down infra-logs docker-up docker-down prod-init check-prod-env prod-build prod-up prod-down helm-lint helm-template helm-install helm-uninstall publish-github publish-codeup publish-all
 
 GO ?= go
 DEV_COMPOSE = docker compose --env-file backend/.env -f docker-compose.dev.yml
@@ -13,8 +13,6 @@ CODEUP_REMOTE ?= origin
 PUBLISH_BRANCH ?= $(shell git branch --show-current)
 PUSH_DRY_RUN = $(if $(filter 1,$(DRY_RUN)),--dry-run,)
 VERSION_FILE = VERSION
-SDK_SPEC = backend/server/docs/openapi.json
-SDK_OUTPUT = frontend/admin/src/lib/sdk/generated.ts
 HELM ?= helm
 HELM_CHART = deploy/helm
 HELM_RELEASE ?= snakerule
@@ -55,8 +53,9 @@ help:
 	@echo "  make build-backend  Build backend/bin/snakerule-server"
 	@echo "  make format         Format Go source"
 	@echo "  make check-backend  Check formatting, vet, and compile the backend"
+	@echo "  make gen-sdk        Generate the TypeScript SDK from the Go OpenAPI contract"
+	@echo "  make check-sdk      Check that generated SDK files match the OpenAPI contract"
 	@echo "  make test           Run backend Go tests"
-	@echo "  make gen-sdk        Generate TypeScript API types from $(SDK_SPEC)"
 	@echo "  make set-version v=0.1.1 Update the project version"
 	@echo "  make infra-up       Start PostgreSQL and optional Redis containers"
 	@echo "  make infra-down     Stop infrastructure containers"
@@ -163,12 +162,22 @@ check-backend:
 	cd $(SERVER_DIR) && $(GO) vet ./... && $(GO) build ./...
 
 check-all: check-backend
+	$(MAKE) check-sdk
+
+check-sdk:
+	@set -eu; tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
+	cp -R frontend/admin/src/lib/sdk "$$tmp/sdk"; \
+	if ! $(MAKE) gen-sdk >"$$tmp/gen-sdk.log" 2>&1; then cat "$$tmp/gen-sdk.log"; exit 1; fi; \
+	if ! diff -qr "$$tmp/sdk" frontend/admin/src/lib/sdk >/dev/null; then \
+		echo "OpenAPI contract and generated SDK differ; run make gen-sdk and review the generated diff."; \
+		diff -qr "$$tmp/sdk" frontend/admin/src/lib/sdk || true; exit 1; \
+	fi; echo "OpenAPI contract and generated SDK are in sync."
 
 test:
 	cd $(SERVER_DIR) && $(GO) test ./...
 
 gen-sdk:
-	python3 scripts/generate_sdk.py $(SDK_SPEC) $(SDK_OUTPUT)
+	python3 scripts/generate_sdk.py
 
 set-version:
 	python3 scripts/set_version.py "$(v)"

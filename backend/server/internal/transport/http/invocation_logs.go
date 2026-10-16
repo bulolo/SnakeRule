@@ -2,10 +2,12 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/szplanner/snakerule/internal/domain"
 	"github.com/szplanner/snakerule/internal/repo"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func (s *Server) listProjectInvocations(w http.ResponseWriter, r *http.Request) {
@@ -14,20 +16,47 @@ func (s *Server) listProjectInvocations(w http.ResponseWriter, r *http.Request) 
 		s.writeServiceError(w, err)
 		return
 	}
-	items := []domain.InvocationLog{}
-	if s.invocationLogs != nil {
-		items = s.invocationLogs.List(repo.OrganizationIDFrom(r.Context()), projectID)
+	filter := repo.InvocationLogFilter{
+		RulesetID: r.URL.Query().Get("ruleset_id"), RequestID: r.URL.Query().Get("request_id"),
+		Source: r.URL.Query().Get("source"), Outcome: r.URL.Query().Get("outcome"),
+		Page: positiveQueryInt(r, "page", 1), Size: positiveQueryInt(r, "size", 20),
+		Unpaged: r.URL.Query().Get("is_pager") == "0",
 	}
-	if rulesetID := strings.TrimSpace(r.URL.Query().Get("ruleset_id")); rulesetID != "" {
-		filtered := make([]domain.InvocationLog, 0, len(items))
-		for _, item := range items {
-			if item.RulesetID == rulesetID {
-				filtered = append(filtered, item)
-			}
+	var err error
+	if raw := strings.TrimSpace(r.URL.Query().Get("since")); raw != "" {
+		parsed, parseErr := time.Parse(time.RFC3339, raw)
+		if parseErr != nil {
+			writeError(w, http.StatusBadRequest, errors.New("since must be an RFC3339 timestamp"))
+			return
 		}
-		items = filtered
+		filter.Since = &parsed
 	}
-	writeJSON(w, http.StatusOK, paginatedListData(r, items, nil))
+	if raw := strings.TrimSpace(r.URL.Query().Get("until")); raw != "" {
+		parsed, parseErr := time.Parse(time.RFC3339, raw)
+		if parseErr != nil {
+			writeError(w, http.StatusBadRequest, errors.New("until must be an RFC3339 timestamp"))
+			return
+		}
+		filter.Until = &parsed
+	}
+	if filter.Outcome != "" && filter.Outcome != "matched" && filter.Outcome != "unmatched" && filter.Outcome != "error" {
+		writeError(w, http.StatusBadRequest, errors.New("outcome must be matched, unmatched, or error"))
+		return
+	}
+	page := repo.InvocationLogPage{Items: []domain.InvocationLog{}}
+	if s.invocationLogs != nil {
+		page, err = s.invocationLogs.Query(r.Context(), repo.OrganizationIDFrom(r.Context()), projectID, filter)
+		if err != nil {
+			s.writeServiceError(w, err)
+			return
+		}
+	}
+	pagination := PaginationInfo{IsPager: 1, Page: filter.Page, Size: filter.Size, Total: page.Total}
+	if filter.Unpaged {
+		pagination.IsPager = 0
+		pagination.Total = page.Total
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"list": page.Items, "pagination": pagination})
 }
 
 type responseStatusRecorder struct {

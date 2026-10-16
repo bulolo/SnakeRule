@@ -2,12 +2,15 @@ package httpapi
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/szplanner/snakerule/internal/domain"
 	"github.com/szplanner/snakerule/internal/repo"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -85,8 +88,67 @@ func (s *Server) saveRuleset(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Location", "/api/v1/rulesets/"+item.ID)
 	writeJSON(w, 200, item)
 }
+
+func (s *Server) listRulesetVersions(w http.ResponseWriter, r *http.Request) {
+	versions, err := s.rulesets.ListVersions(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, paginatedListData(r, versions, nil))
+}
+
+func (s *Server) publishRuleset(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ChangeNote string `json:"change_note"`
+	}
+	if err := decodeBody(w, r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len([]rune(request.ChangeNote)) > 500 {
+		writeError(w, http.StatusBadRequest, errors.New("change_note must be at most 500 characters"))
+		return
+	}
+	user := s.sessionFromRequest(r)
+	version, err := s.rulesets.Publish(r.Context(), r.PathValue("id"), user.Email, request.ChangeNote)
+	if err != nil {
+		s.writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, version)
+}
+
+func (s *Server) rollbackRuleset(w http.ResponseWriter, r *http.Request) {
+	version, err := strconv.Atoi(r.PathValue("version"))
+	if err != nil || version < 1 {
+		writeError(w, http.StatusBadRequest, errors.New("version must be a positive integer"))
+		return
+	}
+	user := s.sessionFromRequest(r)
+	created, err := s.rulesets.Rollback(r.Context(), r.PathValue("id"), version, user.Email)
+	if err != nil {
+		s.writeServiceError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
+}
+
 func (s *Server) evaluate(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
+	requestID := strings.TrimSpace(r.Header.Get("X-Request-ID"))
+	if len(requestID) > 128 {
+		requestID = ""
+	}
+	if requestID == "" {
+		var randomID [16]byte
+		if _, err := rand.Read(randomID[:]); err == nil {
+			requestID = hex.EncodeToString(randomID[:])
+		} else {
+			requestID = fmt.Sprintf("%d", startedAt.UnixNano())
+		}
+	}
+	w.Header().Set("X-Request-ID", requestID)
 	recorder := &responseStatusRecorder{ResponseWriter: w, status: http.StatusOK}
 	w = recorder
 	var requestPayload bytes.Buffer
@@ -114,7 +176,7 @@ func (s *Server) evaluate(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.invocationLogs.Add(domain.InvocationLog{
 			OrganizationID: repo.OrganizationIDFrom(r.Context()), ProjectID: repo.ProjectIDFrom(r.Context()),
-			RulesetID: rulesetID, Method: r.Method, Path: r.URL.Path, Source: source, CredentialType: credential.Type, StatusCode: recorder.status,
+			RulesetID: rulesetID, RulesetVersion: decision.PublishedVersion, RequestID: requestID, Method: r.Method, Path: r.URL.Path, Source: source, CredentialType: credential.Type, StatusCode: recorder.status,
 			Matched:  recorder.status >= 200 && recorder.status < 300 && decision.Matched,
 			HitRules: hits, RequestBody: captureInvocationBody(requestPayload.Bytes()), ResponseBody: captureInvocationBody(recorder.body),
 			DurationMS: time.Since(startedAt).Milliseconds(), CreatedAt: startedAt.UTC(),
@@ -139,6 +201,7 @@ func (s *Server) evaluate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var err error
+	evaluationStarted := time.Now()
 	if req.Ruleset != nil {
 		if req.Ruleset.ID != req.RulesetID {
 			writeError(w, http.StatusBadRequest, errors.New("ruleset_id must match ruleset.id"))
@@ -149,8 +212,18 @@ func (s *Server) evaluate(w http.ResponseWriter, r *http.Request) {
 		decision, err = s.engine.Evaluate(r.Context(), req.RulesetID, req.Facts)
 	}
 	if err != nil {
+		if s.metrics != nil {
+			s.metrics.observeEvaluation("error", time.Since(evaluationStarted).Seconds())
+		}
 		s.writeServiceError(w, err)
 		return
+	}
+	if s.metrics != nil {
+		if decision.Matched {
+			s.metrics.observeEvaluation("matched", time.Since(evaluationStarted).Seconds())
+		} else {
+			s.metrics.observeEvaluation("unmatched", time.Since(evaluationStarted).Seconds())
+		}
 	}
 	if req.Ruleset == nil {
 		s.dispatchProjectAlert(r.Context(), decision, nil, false)

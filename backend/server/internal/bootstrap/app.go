@@ -88,6 +88,9 @@ func New() (*App, error) {
 	if err = userStore.SeedSuperAdmin(cfg.Auth.Email, cfg.Auth.Name, cfg.Auth.Password); err != nil {
 		return nil, fmt.Errorf("seed superadmin: %w", err)
 	}
+	if err = userStore.SeedDefaultOrganizationAdmin(); err != nil {
+		return nil, fmt.Errorf("seed default organization admin: %w", err)
+	}
 	alertChannelStore, err := repo.NewPersistentAlertChannelRepository("alert-channels")
 	if err != nil {
 		return nil, fmt.Errorf("load alert channels: %w", err)
@@ -126,6 +129,7 @@ func New() (*App, error) {
 	handler.SetUserRepository(userStore)
 	server := &http.Server{Addr: ":" + cfg.Server.Port, Handler: handler.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	backgroundCtx, stopBackground := context.WithCancel(context.Background())
+	startInvocationLogCleanup(backgroundCtx, invocationLogStore, cfg.Invocations.RetentionDays, cfg.Invocations.CleanupIntervalSecs, cfg.Invocations.CleanupBatchSize, logger)
 	telemetry.Start(backgroundCtx, telemetry.Config{
 		Environment: cfg.Server.Env,
 		Endpoint:    cfg.Pulse.HeartbeatURL,

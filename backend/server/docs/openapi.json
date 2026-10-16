@@ -226,7 +226,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse"
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "authenticated"
+                      ],
+                      "properties": {
+                        "authenticated": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -786,7 +811,24 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse"
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Ruleset"
+                    }
+                  }
                 }
               }
             }
@@ -1003,7 +1045,24 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse"
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Ruleset"
+                    }
+                  }
                 }
               }
             }
@@ -2003,7 +2062,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse"
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "read"
+                      ],
+                      "properties": {
+                        "read": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -2099,7 +2183,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse"
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "read"
+                      ],
+                      "properties": {
+                        "read": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -2239,6 +2348,58 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "designer_simulation",
+                "project_api",
+                "management"
+              ]
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "matched",
+                "unmatched",
+                "error"
+              ]
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         ],
@@ -2794,7 +2955,40 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse"
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "user_id",
+                        "role"
+                      ],
+                      "properties": {
+                        "user_id": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "project_admin",
+                            "project_member"
+                          ]
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -3231,7 +3425,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse"
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "status"
+                      ],
+                      "properties": {
+                        "status": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -3816,7 +4035,40 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/APIResponse"
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "item",
+                        "organization_role"
+                      ],
+                      "properties": {
+                        "item": {
+                          "$ref": "#/components/schemas/AdminUser"
+                        },
+                        "organization_role": {
+                          "type": "string",
+                          "enum": [
+                            "organization_admin",
+                            "organization_member"
+                          ]
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -4124,38 +4376,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "创建管理用户",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "code",
-                    "msg",
-                    "data"
-                  ],
-                  "properties": {
-                    "code": {
-                      "type": "integer",
-                      "const": 0
-                    },
-                    "msg": {
-                      "type": "string"
-                    },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "item": {
-                          "$ref": "#/components/schemas/AdminUser"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4212,6 +4432,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/APIErrorResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "User created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "item",
+                        "organization_role"
+                      ],
+                      "properties": {
+                        "item": {
+                          "$ref": "#/components/schemas/AdminUser"
+                        },
+                        "organization_role": {
+                          "type": "string",
+                          "enum": [
+                            "organization_admin",
+                            "organization_member"
+                          ]
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -5095,24 +5358,7 @@
                       "type": "string"
                     },
                     "data": {
-                      "type": "object",
-                      "properties": {
-                        "item": {
-                          "$ref": "#/components/schemas/ProjectKey"
-                        },
-                        "secret": {
-                          "type": "string",
-                          "description": "API key returned only when type is apikey."
-                        },
-                        "token": {
-                          "type": "string",
-                          "description": "平台签发的 JWT，仅返回一次。"
-                        },
-                        "signing_secret": {
-                          "type": "string",
-                          "description": "自定义签发模式下仅返回一次的 JWT HS256 签名密钥"
-                        }
-                      }
+                      "$ref": "#/components/schemas/CreateProjectCredentialResponse"
                     }
                   }
                 }
@@ -5253,6 +5499,236 @@
           }
         ]
       }
+    },
+    "/api/v1/rulesets/{id}/versions": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listRulesetVersions",
+        "summary": "List immutable ruleset releases",
+        "tags": [
+          "Rulesets"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "is_pager",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ],
+              "default": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/RulesetVersionList"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/rulesets/{id}/publish": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "publishRuleset",
+        "summary": "Publish a ruleset snapshot",
+        "tags": [
+          "Rulesets"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishRulesetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/RulesetVersion"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/rulesets/{id}/versions/{version}/rollback": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "version",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      ],
+      "post": {
+        "operationId": "rollbackRuleset",
+        "summary": "Restore and publish a prior snapshot as a new release",
+        "tags": [
+          "Rulesets"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/RulesetVersion"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -5266,7 +5742,7 @@
         "properties": {
           "email": {
             "type": "string",
-            "format": "email"
+            "description": "邮箱地址或用户名"
           },
           "password": {
             "type": "string"
@@ -5476,6 +5952,9 @@
             "items": {
               "$ref": "#/components/schemas/Rule"
             }
+          },
+          "published_version": {
+            "type": "integer"
           }
         }
       },
@@ -5564,6 +6043,9 @@
             "items": {
               "$ref": "#/components/schemas/MatchedRule"
             }
+          },
+          "published_version": {
+            "type": "integer"
           }
         }
       },
@@ -6014,6 +6496,12 @@
           "response_body": {
             "type": "string",
             "description": "Response preview, truncated after 8 KiB."
+          },
+          "ruleset_version": {
+            "type": "integer"
+          },
+          "request_id": {
+            "type": "string"
           }
         },
         "required": [
@@ -6094,6 +6582,33 @@
           },
           "ruleset_id": {
             "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "designer_simulation",
+              "project_api",
+              "management"
+            ]
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "unmatched",
+              "error"
+            ]
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -6122,6 +6637,10 @@
         "properties": {
           "id": {
             "type": "string"
+          },
+          "username": {
+            "type": "string",
+            "description": "可选登录用户名"
           },
           "email": {
             "type": "string"
@@ -6492,6 +7011,91 @@
           },
           "connected": {
             "type": "boolean"
+          }
+        }
+      },
+      "RulesetVersion": {
+        "type": "object",
+        "required": [
+          "ruleset_id",
+          "version",
+          "snapshot",
+          "content_hash",
+          "created_by",
+          "created_at"
+        ],
+        "properties": {
+          "ruleset_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/Ruleset"
+          },
+          "content_hash": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "change_note": {
+            "type": "string"
+          }
+        }
+      },
+      "RulesetVersionList": {
+        "type": "object",
+        "required": [
+          "list",
+          "pagination"
+        ],
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RulesetVersion"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "PublishRulesetRequest": {
+        "type": "object",
+        "properties": {
+          "change_note": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "CreateProjectCredentialResponse": {
+        "type": "object",
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/ProjectKey"
+          },
+          "token": {
+            "type": "string",
+            "description": "One-time JWT token; returned only when a JWT credential is created."
+          },
+          "secret": {
+            "type": "string",
+            "description": "One-time API key or JWT secret; returned only when created."
+          },
+          "signing_secret": {
+            "type": "string",
+            "description": "One-time JWT signing secret; returned only when generated."
           }
         }
       }

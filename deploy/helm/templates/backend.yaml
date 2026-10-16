@@ -61,6 +61,9 @@ spec:
             - { name: PULSE_HEARTBEAT_URL, value: {{ .Values.backend.env.pulseHeartbeatURL | quote }} }
             - { name: PULSE_HEARTBEAT_INTERVAL_SECONDS, value: {{ .Values.backend.env.pulseHeartbeatIntervalSeconds | quote }} }
             - { name: PULSE_HEARTBEAT_TIMEOUT_SECONDS, value: {{ .Values.backend.env.pulseHeartbeatTimeoutSeconds | quote }} }
+            - { name: INVOCATIONS_RETENTION_DAYS, value: {{ .Values.backend.env.invocationRetentionDays | quote }} }
+            - { name: INVOCATIONS_CLEANUP_INTERVAL_SECONDS, value: {{ .Values.backend.env.invocationCleanupIntervalSeconds | quote }} }
+            - { name: INVOCATIONS_CLEANUP_BATCH_SIZE, value: {{ .Values.backend.env.invocationCleanupBatchSize | quote }} }
             - name: AUTH_PASSWORD
               valueFrom:
                 secretKeyRef: { name: {{ include "snakerule.secretName" . }}, key: AUTH_PASSWORD }

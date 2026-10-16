@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useState,
+  type CSSProperties,
   type DragEvent,
 } from "react";
 import { CustomSelect, LoginScreen } from "./components/common";
@@ -9,7 +10,6 @@ import { SettingsDialog } from "./components/settings";
 import { Toaster, toast } from "sonner";
 import { ProjectsPanel, type Project } from "./components/projects";
 import {
-  snakeRuleApi,
   type Condition,
   type Decision,
   type Rule,
@@ -17,7 +17,9 @@ import {
   type Organization,
   type InvocationLog,
   type PlatformSettings,
-} from "./lib/sdk/generated";
+  type RulesetVersion,
+} from "./lib/sdk";
+import * as sdk from "./lib/sdk";
 
 const starter: Ruleset = {
   id: "new-ruleset",
@@ -29,6 +31,60 @@ const starter: Ruleset = {
 };
 
 const pretty = (value: unknown) => JSON.stringify(value, null, 2);
+const operatorChoices = [
+  { value: "equal", label: "等于", help: "比较两个值是否相同" },
+  { value: "notEqual", label: "不等于", help: "比较两个值是否不同" },
+  { value: "greaterThan", label: "大于", help: "用于数字比较" },
+  { value: "greaterThanInclusive", label: "大于等于", help: "用于数字比较，包含边界值" },
+  { value: "lessThan", label: "小于", help: "用于数字比较" },
+  { value: "lessThanInclusive", label: "小于等于", help: "用于数字比较，包含边界值" },
+  { value: "in", label: "属于列表", help: "事实值存在于给定 JSON 数组中" },
+  { value: "notIn", label: "不属于列表", help: "事实值不存在于给定 JSON 数组中" },
+  { value: "contains", label: "包含", help: "字符串或数组包含给定值" },
+  { value: "isNull", label: "为空", help: "事实字段缺失或值为 null" },
+  { value: "isNotNull", label: "不为空", help: "事实字段存在且值不为 null" },
+];
+
+function emptyCondition(): Condition {
+  return { fact: "", operator: "equal", value: "" };
+}
+
+function conditionLocalError(condition: Condition): string {
+  const branchCount = Number(condition.all !== undefined) + Number(condition.any !== undefined) + Number(condition.not !== undefined) + Number(condition.fact !== undefined);
+  if (branchCount !== 1) return "条件节点只能设置一个类型。";
+  if ((condition.all && condition.all.length === 0) || (condition.any && condition.any.length === 0)) return "组合条件至少需要一个子条件。";
+  if (condition.all || condition.any) return "";
+  if (condition.not) return conditionLocalError(condition.not);
+  if (!condition.fact?.trim()) return "请填写事实字段路径。";
+  if ((condition.operator === "in" || condition.operator === "notIn") && !Array.isArray(condition.value)) return "此操作符需要 JSON 数组，例如 [\"new\", \"review\"]。";
+  if (["greaterThan", "greaterThanInclusive", "lessThan", "lessThanInclusive"].includes(condition.operator ?? "") && (typeof condition.value !== "number" || !Number.isFinite(condition.value))) return "此操作符需要有效数字。";
+  return "";
+}
+
+function ConditionTreeEditor({ condition, onChange, depth = 0 }: { condition: Condition; onChange: (condition: Condition) => void; depth?: number }) {
+  const branch = condition.all !== undefined ? "all" : condition.any !== undefined ? "any" : condition.not !== undefined ? "not" : "leaf";
+  const wrap = (kind: "all" | "any" | "not") => onChange(kind === "not" ? { not: condition } : { [kind]: [condition, emptyCondition()] });
+  if (branch === "leaf") {
+    const op = condition.operator ?? "equal";
+    const noValue = op === "isNull" || op === "isNotNull";
+    const numeric = ["greaterThan", "greaterThanInclusive", "lessThan", "lessThanInclusive"].includes(op);
+    const array = op === "in" || op === "notIn";
+    return <div className="condition-tree-node" style={{ "--condition-depth": depth } as CSSProperties}>
+      {conditionLocalError(condition) && <small className="condition-tree-error">{conditionLocalError(condition)}</small>}
+      <label>事实字段<input value={condition.fact ?? ""} placeholder="例如 order.amount" onChange={(event) => onChange({ ...condition, fact: event.target.value })} /></label>
+      <label>操作符<CustomSelect ariaLabel="条件操作符" value={op} options={operatorChoices.map(({ value, label }) => ({ value, label }))} onChange={(value) => onChange({ ...condition, operator: value, ...(value === "isNull" || value === "isNotNull" ? { value: undefined } : {}) })} /></label>
+      {!noValue && <label>{array ? "比较数组（JSON）" : "比较值"}{array ? <textarea rows={2} value={typeof condition.value === "string" ? condition.value : JSON.stringify(condition.value ?? [], null, 2)} onChange={(event) => { try { onChange({ ...condition, value: JSON.parse(event.target.value) }); } catch { onChange({ ...condition, value: event.target.value }); } }} /> : typeof condition.value === "boolean" ? <CustomSelect ariaLabel="布尔比较值" value={String(condition.value)} options={[{ value: "true", label: "true" }, { value: "false", label: "false" }]} onChange={(value) => onChange({ ...condition, value: value === "true" })} /> : <input type={numeric || typeof condition.value === "number" ? "number" : "text"} value={String(condition.value ?? "")} onChange={(event) => onChange({ ...condition, value: numeric || typeof condition.value === "number" ? Number(event.target.value) : event.target.value })} />}</label>}
+      <small className="condition-operator-help">{operatorChoices.find((item) => item.value === op)?.help}</small>
+      <div className="condition-tree-add"><button type="button" onClick={() => wrap("all")}>＋ AND 条件</button><button type="button" onClick={() => wrap("any")}>＋ OR 条件</button><button type="button" onClick={() => wrap("not")}>包入 NOT</button></div>
+    </div>;
+  }
+  if (branch === "not") return <div className="condition-tree-group condition-not" style={{ "--condition-depth": depth } as CSSProperties}><header><b>NOT · 不满足以下条件</b><button type="button" onClick={() => onChange(condition.not ?? emptyCondition())}>移除分组</button></header><ConditionTreeEditor condition={condition.not ?? emptyCondition()} onChange={(child) => onChange({ not: child })} depth={depth + 1} /></div>;
+  const kind = branch as "all" | "any";
+  const children = condition[kind] ?? [];
+  const setChildren = (next: Condition[]) => onChange({ [kind]: next });
+  return <div className={`condition-tree-group condition-${kind}`} style={{ "--condition-depth": depth } as CSSProperties}>{conditionLocalError(condition) && <small className="condition-tree-error">{conditionLocalError(condition)}</small>}<header><b>{kind === "all" ? "AND · 全部满足" : "OR · 任一满足"}</b><button type="button" onClick={() => onChange(children[0] ?? emptyCondition())}>移除分组</button></header>{children.map((child, index) => <div className="condition-tree-child" key={index}><ConditionTreeEditor condition={child} onChange={(next) => setChildren(children.map((item, childIndex) => childIndex === index ? next : item))} depth={depth + 1} /><button className="condition-remove-child" type="button" disabled={children.length < 2} aria-label="删除条件" onClick={() => setChildren(children.filter((_, childIndex) => childIndex !== index))}>删除条件</button></div>)}<footer><button type="button" onClick={() => setChildren([...children, emptyCondition()])}>＋ 添加条件</button><button type="button" onClick={() => setChildren([...children, { all: [emptyCondition(), emptyCondition()] }])}>＋ 添加 AND 子组</button><button type="button" onClick={() => setChildren([...children, { any: [emptyCondition(), emptyCondition()] }])}>＋ 添加 OR 子组</button><button type="button" onClick={() => setChildren([...children, { not: emptyCondition() }])}>＋ 添加 NOT 子组</button></footer></div>;
+}
+
 export function Workbench() {
   const [selected, setSelected] = useState<Ruleset>(starter);
   const [editor, setEditor] = useState(pretty(starter));
@@ -41,6 +97,12 @@ export function Workbench() {
   const [version, setVersion] = useState("0.0.2");
   const [platformBrand, setPlatformBrand] = useState<PlatformSettings>({ name: "SnakeRule", tagline: "确定性规则求值平台", logo_url: "" });
   const [busy, setBusy] = useState(false);
+  const [rulesetVersions, setRulesetVersions] = useState<RulesetVersion[]>([]);
+  const [versionsModalOpen, setVersionsModalOpen] = useState(false);
+  const [publishModalOpen, setPublishModalOpen] = useState(false);
+  const [publishNote, setPublishNote] = useState("");
+  const [rollbackTarget, setRollbackTarget] = useState<RulesetVersion | null>(null);
+  const [comparisonVersion, setComparisonVersion] = useState<RulesetVersion | null>(null);
   const [screen, setScreen] = useState<"overview" | "design" | "projects">(() => {
     const saved = sessionStorage.getItem("snakerule:screen");
     return saved === "projects" || saved === "design" ? "projects" : "overview";
@@ -78,18 +140,18 @@ export function Workbench() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
-    void snakeRuleApi.getPlatformSettings().then(setPlatformBrand).catch(() => undefined);
+    void sdk.getPlatformSettings().then(setPlatformBrand).catch(() => undefined);
   }, []);
   useEffect(() => { document.title = platformBrand.name || "SnakeRule"; }, [platformBrand.name]);
 
   const refreshOrganizations = useCallback(async () => {
-    const result = await snakeRuleApi.listOrganizations();
+    const result = await sdk.listOrganizations();
     setOrganizations(result.list);
     setActiveOrganizationID(result.active_organization_id);
   }, []);
 
   const refreshProjects = useCallback(async () => {
-    const body = await snakeRuleApi.listProjects();
+    const body = await sdk.listProjects();
     setProjects(body.list ?? []);
     setOpenProjectID(body.active_project_id ?? "");
   }, []);
@@ -98,7 +160,7 @@ export function Workbench() {
     if (screen !== "overview" || !projects.length) { setOverviewLogs([]); return; }
     let cancelled = false;
     setOverviewLogsBusy(true);
-    Promise.all(projects.map((project) => snakeRuleApi.listProjectInvocations(project.id, { is_pager: 0 })))
+    Promise.all(projects.map((project) => sdk.listProjectInvocations(project.id, { is_pager: 0 })))
       .then((responses) => { if (!cancelled) setOverviewLogs(responses.flatMap((response) => response.list ?? [])); })
       .catch((error: Error) => { if (!cancelled) toast.error("加载调用统计失败", { description: error.message }); })
       .finally(() => { if (!cancelled) setOverviewLogsBusy(false); });
@@ -118,19 +180,19 @@ export function Workbench() {
   const pagedOverviewLogs = sortedOverviewLogs.slice((globalLogPage - 1) * globalLogPageSize, globalLogPage * globalLogPageSize);
 
   const refreshAlertChannels = useCallback(async () => {
-    const body = await snakeRuleApi.listOrganizationAlertChannels(activeOrganizationID);
+    const body = await sdk.listOrganizationAlertChannels(activeOrganizationID);
     setAlertChannels((body.list ?? []).filter((item: { enabled: boolean }) => item.enabled));
   }, [activeOrganizationID]);
 
   const refreshNotifications = useCallback(async () => {
-    const body = await snakeRuleApi.listNotifications();
+    const body = await sdk.listNotifications();
     setNotifications(body.list ?? []);
   }, []);
 
   async function markNotificationsRead(id?: string) {
     try {
-      if (id) await snakeRuleApi.readNotification(id);
-      else await snakeRuleApi.readAllNotifications();
+      if (id) await sdk.readNotification(id);
+      else await sdk.readAllNotifications();
       await refreshNotifications();
     } catch (error) {
       toast.error("更新通知状态失败", { description: error instanceof Error ? error.message : "请求失败" });
@@ -140,8 +202,8 @@ export function Workbench() {
   const refresh = useCallback(
     async (id?: string) => {
       const [list, meta] = await Promise.all([
-        snakeRuleApi.listRulesets(),
-        snakeRuleApi.getMeta(),
+        sdk.listRulesets(),
+        sdk.getMeta(),
       ]);
       setVersion(meta.version ?? "0.0.2");
       const item =
@@ -159,7 +221,7 @@ export function Workbench() {
   );
   useEffect(() => {
     let active = true;
-    snakeRuleApi
+    sdk
       .getSession()
       .then((session) => {
         if (!active) return;
@@ -222,6 +284,7 @@ export function Workbench() {
     setDecision(null);
     setError("");
     setNotice("");
+    setRulesetVersions([]);
     setDesignMode("canvas");
     setActiveRuleId(item.rules[0]?.id ?? "");
     setEditorReturnScreen(returnScreen);
@@ -232,9 +295,9 @@ export function Workbench() {
     setBusy(true);
     setError("");
     try {
-      await snakeRuleApi.setActiveOrganization(organizationID);
+      await sdk.setActiveOrganization({ organization_id: organizationID });
       setActiveOrganizationID(organizationID);
-      const session = await snakeRuleApi.getSession();
+      const session = await sdk.getSession();
       setOrganizationRole(session.user?.role ?? "");
       setOpenProjectID("");
       setScreen("projects");
@@ -251,14 +314,14 @@ export function Workbench() {
     if (!id || id === openProjectID) return;
     setBusy(true); setError("");
     try {
-      await snakeRuleApi.setActiveProject(id);
+      await sdk.setActiveProject({ project_id: id });
       setOpenProjectID(id); setDecision(null); setActiveRuleId(""); await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "切换项目失败"); }
     finally { setBusy(false); }
   }
   async function create(name = "新规则集"): Promise<Ruleset> {
     const item: Ruleset = { ...starter, id: `ruleset-${Date.now()}`, name };
-    return snakeRuleApi.createRuleset(item);
+    return sdk.createRuleset(item);
   }
   function updateRuleset(change: (value: Ruleset) => Ruleset) {
     try {
@@ -380,29 +443,6 @@ export function Workbench() {
     setRuleAlertModalOpen(false);
     toast.info("通知设置已应用到草稿，请保存规则集后生效");
   }
-  function patchFirstCondition(
-    condition: Condition,
-    patch: Partial<Condition>,
-  ): Condition {
-    if (condition.fact) return { ...condition, ...patch };
-    if (condition.all?.length)
-      return {
-        ...condition,
-        all: condition.all.map((child, index) =>
-          index === 0 ? patchFirstCondition(child, patch) : child,
-        ),
-      };
-    if (condition.any?.length)
-      return {
-        ...condition,
-        any: condition.any.map((child, index) =>
-          index === 0 ? patchFirstCondition(child, patch) : child,
-        ),
-      };
-    if (condition.not)
-      return { ...condition, not: patchFirstCondition(condition.not, patch) };
-    return { ...condition, ...patch };
-  }
   const conditionOf = (condition: Condition): Condition =>
     condition.fact
       ? condition
@@ -427,7 +467,7 @@ export function Workbench() {
       const value = JSON.parse(editor) as Ruleset;
       if (!value.id?.trim() || !value.name?.trim())
         throw new Error("规则集 ID 和名称不能为空");
-      const saved = await snakeRuleApi.updateRuleset(value);
+      const saved = await sdk.updateRuleset(value.id, value);
       setSelected(saved);
       setEditor(pretty(saved));
       setNotice("规则集已保存");
@@ -440,11 +480,58 @@ export function Workbench() {
       setBusy(false);
     }
   }
+
+  async function loadRulesetVersions() {
+    try {
+      const response = await sdk.listRulesetVersions(selected.id);
+      setRulesetVersions(response.list ?? []);
+      setVersionsModalOpen(true);
+    } catch (e) {
+      toast.error("读取版本历史失败", { description: e instanceof Error ? e.message : "请求失败" });
+    }
+  }
+
+  async function publishDraft() {
+    setBusy(true);
+    try {
+      const draft = JSON.parse(editor) as Ruleset;
+      const saved = await sdk.updateRuleset(draft.id, draft);
+      const published = await sdk.publishRuleset(saved.id, { change_note: publishNote });
+      const updated = { ...saved, published_version: published.version };
+      setSelected(updated);
+      setEditor(pretty(updated));
+      setPublishModalOpen(false);
+      setPublishNote("");
+      toast.success(`已发布版本 v${published.version}`);
+    } catch (e) {
+      toast.error("发布失败", { description: e instanceof Error ? e.message : "请检查规则定义" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rollbackRulesetVersion(version: RulesetVersion) {
+    setBusy(true);
+    try {
+      const created = await sdk.rollbackRuleset(selected.id, version.version);
+      const restored = created.snapshot;
+      setSelected(restored);
+      setEditor(pretty(restored));
+      const response = await sdk.listRulesetVersions(selected.id);
+      setRulesetVersions(response.list ?? []);
+      setRollbackTarget(null);
+      toast.success(`已从 v${version.version} 回滚并发布 v${created.version}`);
+    } catch (e) {
+      toast.error("回滚失败", { description: e instanceof Error ? e.message : "请求失败" });
+    } finally {
+      setBusy(false);
+    }
+  }
   async function removeRuleset(item: Ruleset) {
     setBusy(true);
     setError("");
     try {
-      await snakeRuleApi.deleteRuleset(item.id);
+      await sdk.deleteRuleset(item.id);
       setDecision(null);
       await refresh();
       setNotice(`已删除规则集“${item.name}”`);
@@ -461,11 +548,11 @@ export function Workbench() {
     try {
       const value = JSON.parse(editor) as Ruleset;
       const input = JSON.parse(facts);
-      const result = await snakeRuleApi.evaluate({
+      const result = await sdk.evaluate({
         ruleset_id: value.id,
         facts: input,
         ruleset: value,
-      }, "designer");
+      }, { headers: { "X-SnakeRule-Source": "designer" } });
       setDecision(result);
       await refreshNotifications();
     } catch (e) {
@@ -479,7 +566,7 @@ export function Workbench() {
     setBusy(true);
     setError("");
     try {
-      await snakeRuleApi.logout();
+      await sdk.logout();
       setAuthState("anonymous");
       setEmail("");
       setIsSuperAdmin(false);
@@ -507,7 +594,7 @@ export function Workbench() {
         brand={platformBrand}
         onSuccess={(email) => {
           setEmail(email);
-          void snakeRuleApi.getSession().then((session) => {
+          void sdk.getSession().then((session) => {
             setIsSuperAdmin(session.user?.is_superadmin ?? false);
             setOrganizationRole(session.user?.role ?? "");
           });
@@ -706,9 +793,11 @@ export function Workbench() {
                   </p>
                 </div>
                 <div className="title-actions">
-                  <button className="primary" disabled={busy} onClick={save}>
-                    {busy ? "保存中…" : "保存规则集"}
+                  <button className="secondary" disabled={busy} onClick={save}>
+                    {busy ? "处理中…" : "保存草稿"}
                   </button>
+                  <button className="secondary" disabled={busy} onClick={() => void loadRulesetVersions()}>版本历史</button>
+                  <button className="primary" disabled={busy} onClick={() => setPublishModalOpen(true)}>发布新版本</button>
                 </div>
               </section>
               <section className="design-meta">
@@ -717,8 +806,8 @@ export function Workbench() {
                   <b>{selected.id}</b>
                 </div>
                 <div>
-                  <small>版本</small>
-                  <b>{selected.version || "—"}</b>
+                  <small>发布版本</small>
+                  <b>{selected.published_version ? `v${selected.published_version}` : "未发布"}</b>
                 </div>
                 <div>
                   <small>规则数量</small>
@@ -726,7 +815,7 @@ export function Workbench() {
                 </div>
                 <div className="meta-note">
                   <span>ⓘ</span>{" "}
-                  保存后规则定义立即更新；调试结果不会写入执行记录。
+                  保存只更新草稿；项目 API 调用已发布快照。设计器模拟可直接运行当前草稿。
                 </div>
               </section>
               <div className="designer-toolbar">
@@ -953,92 +1042,7 @@ export function Workbench() {
                         <div className="inspector-section-title">
                           条件配置 <small>满足条件时触发</small>
                         </div>
-                        <label>
-                          事实字段
-                          <input
-                            placeholder="例如 order.amount"
-                            value={activeCondition.fact ?? ""}
-                            onChange={(e) =>
-                              updateActiveRule((rule) => ({
-                                ...rule,
-                                conditions: patchFirstCondition(
-                                  rule.conditions,
-                                  { fact: e.target.value },
-                                ),
-                              }))
-                            }
-                          />
-                        </label>
-                        <label>
-                          匹配方式
-                          <CustomSelect
-                            ariaLabel="匹配方式"
-                            value={activeCondition.operator ?? "equal"}
-                            options={[
-                              ["equal", "等于"],
-                              ["notEqual", "不等于"],
-                              ["greaterThan", "大于"],
-                              ["greaterThanInclusive", "大于等于"],
-                              ["lessThan", "小于"],
-                              ["lessThanInclusive", "小于等于"],
-                            ].map(([value, label]) => ({ value, label }))}
-                            onChange={(value) =>
-                              updateActiveRule((rule) => ({
-                                ...rule,
-                                conditions: patchFirstCondition(
-                                  rule.conditions,
-                                  { operator: value },
-                                ),
-                              }))
-                            }
-                          />
-                        </label>
-                        <label>
-                          比较值
-                          {typeof activeCondition.value === "boolean" ? (
-                            <CustomSelect
-                              ariaLabel="比较值"
-                              value={String(activeCondition.value)}
-                              options={[
-                                { value: "true", label: "true" },
-                                { value: "false", label: "false" },
-                              ]}
-                              onChange={(value) =>
-                                updateActiveRule((rule) => ({
-                                  ...rule,
-                                  conditions: patchFirstCondition(
-                                    rule.conditions,
-                                    { value: value === "true" },
-                                  ),
-                                }))
-                              }
-                            />
-                          ) : (
-                            <input
-                              type={
-                                typeof activeCondition.value === "number"
-                                  ? "number"
-                                  : "text"
-                              }
-                              value={String(activeCondition.value ?? "")}
-                              onChange={(e) =>
-                                updateActiveRule((rule) => ({
-                                  ...rule,
-                                  conditions: patchFirstCondition(
-                                    rule.conditions,
-                                    {
-                                      value:
-                                        typeof activeCondition.value ===
-                                        "number"
-                                          ? Number(e.target.value)
-                                          : e.target.value,
-                                    },
-                                  ),
-                                }))
-                              }
-                            />
-                          )}
-                        </label>
+                        <ConditionTreeEditor condition={activeRule.conditions} onChange={(conditions) => updateActiveRule((rule) => ({ ...rule, conditions }))} />
                         <div className="inspector-divider" />
                         <div className="inspector-section-title">
                           命中动作{" "}
@@ -1220,6 +1224,9 @@ export function Workbench() {
         </>}
         <footer><button className="quiet" onClick={() => setRuleAlertModalOpen(false)}>取消</button><button className="primary" disabled={ruleAlertOverride && ruleAlertEnabled && ruleAlertChannelIDs.length === 0} onClick={saveRuleAlertConfig}>应用设置</button></footer>
       </section></div>}
+      {publishModalOpen && <div className="project-modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPublishModalOpen(false); }}><section className="project-modal project-config-modal" role="dialog" aria-modal="true" aria-labelledby="publish-ruleset-title"><header><div><small>RULESET RELEASE</small><h2 id="publish-ruleset-title">发布规则集</h2><p>发布后，项目 API 将使用此不可变快照；后续修改仍保存在草稿中。</p></div><button className="quiet" onClick={() => setPublishModalOpen(false)} aria-label="关闭">×</button></header><label className="project-modal-field">发布说明<input value={publishNote} onChange={(event) => setPublishNote(event.target.value)} placeholder="例如：调整大额订单审核阈值" /></label><footer><button className="quiet" onClick={() => setPublishModalOpen(false)}>取消</button><button className="primary" disabled={busy} onClick={() => void publishDraft()}>{busy ? "正在发布…" : "确认发布"}</button></footer></section></div>}
+      {versionsModalOpen && <div className="project-modal-overlay ruleset-version-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setVersionsModalOpen(false); setComparisonVersion(null); } }}><section className="project-modal ruleset-version-modal" role="dialog" aria-modal="true" aria-labelledby="ruleset-version-title"><header><div><small>IMMUTABLE RELEASES</small><h2 id="ruleset-version-title">版本历史</h2><p>当前发布版本：{selected.published_version ? `v${selected.published_version}` : "尚未发布"} · 回滚会生成一个新的发布版本。</p></div><button className="quiet" onClick={() => { setVersionsModalOpen(false); setComparisonVersion(null); }} aria-label="关闭">×</button></header><div className="ruleset-version-content"><div className="ruleset-version-list">{rulesetVersions.map((item) => <article key={item.version} className={item.version === selected.published_version ? "current" : ""}><div><b>版本 v{item.version}{item.version === selected.published_version ? " · 当前" : ""}</b><small>{new Date(item.created_at).toLocaleString("zh-CN")} · {item.created_by}</small>{item.change_note && <p>{item.change_note}</p>}</div><nav><button className="quiet" onClick={() => setComparisonVersion(item)}>对比当前</button>{item.version !== selected.published_version && <button className="secondary" disabled={busy} onClick={() => setRollbackTarget(item)}>回滚</button>}</nav></article>)}{!rulesetVersions.length && <div className="table-empty"><b>暂无发布版本</b><small>保存草稿后发布，即可在这里查看版本历史。</small></div>}</div>{comparisonVersion && <section className="ruleset-version-snapshot"><header><b>版本对比 · v{comparisonVersion.version} 与当前发布版</b><button className="quiet" onClick={() => setComparisonVersion(null)}>关闭</button></header><div className="ruleset-version-compare"><article><b>历史快照 v{comparisonVersion.version}</b><pre>{pretty(comparisonVersion.snapshot)}</pre><small>内容摘要 · {comparisonVersion.content_hash}</small></article><article><b>当前发布版 {selected.published_version ? `v${selected.published_version}` : "（尚未发布）"}</b><pre>{pretty(rulesetVersions.find((item) => item.version === selected.published_version)?.snapshot ?? selected)}</pre></article></div></section>}</div><footer><button className="quiet" onClick={() => { setVersionsModalOpen(false); setComparisonVersion(null); }}>关闭</button></footer></section></div>}
+      {rollbackTarget && <div className="project-modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRollbackTarget(null); }}><section className="project-modal project-delete-modal" role="dialog" aria-modal="true" aria-labelledby="rollback-title"><header><div><small>ROLLBACK RELEASE</small><h2 id="rollback-title">回滚到 v{rollbackTarget.version}？</h2><p>系统会以该快照创建一个新的版本，历史版本不会被修改。</p></div><button className="quiet" onClick={() => setRollbackTarget(null)} aria-label="关闭">×</button></header><footer><button className="quiet" disabled={busy} onClick={() => setRollbackTarget(null)}>取消</button><button className="primary" disabled={busy} onClick={() => void rollbackRulesetVersion(rollbackTarget)}>确认回滚</button></footer></section></div>}
       {settingsArea && (
         <SettingsDialog
           area={settingsArea}

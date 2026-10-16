@@ -82,6 +82,9 @@ func Validate(condition domain.Condition) error {
 		return fmt.Errorf("condition must contain exactly one of all, any, not, or fact")
 	}
 	if condition.All != nil {
+		if len(condition.All) == 0 {
+			return fmt.Errorf("all must contain at least one condition")
+		}
 		for _, child := range condition.All {
 			if err := Validate(child); err != nil {
 				return err
@@ -90,6 +93,9 @@ func Validate(condition domain.Condition) error {
 		return nil
 	}
 	if condition.Any != nil {
+		if len(condition.Any) == 0 {
+			return fmt.Errorf("any must contain at least one condition")
+		}
 		for _, child := range condition.Any {
 			if err := Validate(child); err != nil {
 				return err
@@ -104,7 +110,17 @@ func Validate(condition domain.Condition) error {
 		return fmt.Errorf("fact path must not be empty")
 	}
 	switch condition.Operator {
-	case "equal", "eq", "notEqual", "ne", "greaterThan", "gt", "greaterThanInclusive", "gte", "lessThan", "lt", "lessThanInclusive", "lte", "in", "notIn", "contains", "isNull", "isNotNull":
+	case "equal", "eq", "notEqual", "ne", "contains", "isNull", "isNotNull":
+		return nil
+	case "in", "notIn":
+		if _, ok := condition.Value.([]any); !ok {
+			return fmt.Errorf("operator %s expects an array value", condition.Operator)
+		}
+		return nil
+	case "greaterThan", "gt", "greaterThanInclusive", "gte", "lessThan", "lt", "lessThanInclusive", "lte":
+		if _, err := number(condition.Value); err != nil {
+			return fmt.Errorf("operator %s expects a numeric value", condition.Operator)
+		}
 		return nil
 	default:
 		return fmt.Errorf("unsupported operator %q", condition.Operator)

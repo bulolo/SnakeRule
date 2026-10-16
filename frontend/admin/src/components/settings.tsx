@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  snakeRuleApi,
   type LicenseStatus,
   type PlatformSettings,
   type SystemInfo,
   type AlertChannel as APIAlertChannel,
   type AdminUser as APIAdminUser,
   type Organization,
-} from "../lib/sdk/generated";
+} from "../lib/sdk";
+import * as sdk from "../lib/sdk";
 import { CustomSelect } from "./common";
 import { toast } from "sonner";
 
@@ -37,8 +37,8 @@ function LicenseSettings({ version }: { version: string }) {
     setError("");
     try {
       const [licenseResult, infoResult] = await Promise.allSettled([
-        snakeRuleApi.getLicense(),
-        snakeRuleApi.getSystemInfo(),
+        sdk.getLicense(),
+        sdk.getPlatformSystemInfo(),
       ]);
       if (licenseResult.status === "fulfilled") {
         setStatus(licenseResult.value);
@@ -65,7 +65,7 @@ function LicenseSettings({ version }: { version: string }) {
     setBusy(true);
     setError("");
     try {
-      setStatus(await snakeRuleApi.uploadLicense(file));
+      setStatus(await sdk.uploadLicense({ file }));
     } catch (e) {
       setError(e instanceof Error ? e.message : "授权校验失败");
     } finally {
@@ -77,7 +77,7 @@ function LicenseSettings({ version }: { version: string }) {
     setBusy(true);
     setError("");
     try {
-      setStatus(await snakeRuleApi.clearLicense());
+      setStatus(await sdk.clearLicense());
     } catch (e) {
       setError(e instanceof Error ? e.message : "清除授权失败");
     } finally {
@@ -228,7 +228,7 @@ function PlatformBrandSettings({ value, onSave }: { value: PlatformSettings; onS
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true);
     try {
-      const result = await snakeRuleApi.updatePlatformSettings({ name: name.trim(), tagline: tagline.trim(), logo_url: logoURL.trim() });
+      const result = await sdk.updatePlatformSettings({ name: name.trim(), tagline: tagline.trim(), logo_url: logoURL.trim() });
       onSave(result); toast.success("平台品牌配置已保存");
     } catch (e) { toast.error("保存平台品牌配置失败", { description: e instanceof Error ? e.message : "请稍后重试" }); }
     finally { setBusy(false); }
@@ -289,8 +289,8 @@ function OrganizationSettings({
         description: description.trim(),
         admin_user_id: editingID ? undefined : adminUserID || undefined,
       };
-      if (editingID) await snakeRuleApi.updateOrganization(editingID, input);
-      else await snakeRuleApi.createOrganization(input);
+      if (editingID) await sdk.updateOrganization(editingID, input);
+      else await sdk.createOrganization(input);
       setName("");
       setSlug("");
       setDescription("");
@@ -316,7 +316,7 @@ function OrganizationSettings({
     setBusy(true);
     setError("");
     try {
-      await snakeRuleApi.deleteOrganization(item.id);
+      await sdk.deleteOrganization(item.id);
       setConfirmDeleteID("");
       await onRefresh();
     } catch (e) {
@@ -483,7 +483,7 @@ function AlertChannelSettings({ organizationID, onRefresh }: { organizationID: s
   const [notice, setNotice] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const refresh = useCallback(async () => {
-    const body = await snakeRuleApi.listOrganizationAlertChannels(organizationID);
+    const body = await sdk.listOrganizationAlertChannels(organizationID);
     setItems(body.list ?? []);
   }, [organizationID]);
   useEffect(() => { void refresh().catch((e: Error) => setError(e.message)); }, [refresh]);
@@ -496,8 +496,8 @@ function AlertChannelSettings({ organizationID, onRefresh }: { organizationID: s
     event.preventDefault(); setBusy(true); setError("");
     try {
       const input = { name, type: channelType, url, secret: secret || undefined, enabled };
-      if (editing) await snakeRuleApi.updateOrganizationAlertChannel(organizationID, editing, input);
-      else await snakeRuleApi.createOrganizationAlertChannel(organizationID, input);
+      if (editing) await sdk.updateOrganizationAlertChannel(organizationID, editing, input);
+      else await sdk.createOrganizationAlertChannel(organizationID, input);
       reset(); await refresh(); await onRefresh();
     } catch (e) { setError(e instanceof Error ? e.message : "保存告警渠道失败"); }
     finally { setBusy(false); }
@@ -505,7 +505,7 @@ function AlertChannelSettings({ organizationID, onRefresh }: { organizationID: s
   async function remove(item: AlertChannel) {
     setBusy(true); setError("");
     try {
-      await snakeRuleApi.deleteOrganizationAlertChannel(organizationID, item.id);
+      await sdk.deleteOrganizationAlertChannel(organizationID, item.id);
       setConfirmDelete(""); await refresh(); await onRefresh();
     } catch (e) { setError(e instanceof Error ? e.message : "删除告警渠道失败"); }
     finally { setBusy(false); }
@@ -513,7 +513,7 @@ function AlertChannelSettings({ organizationID, onRefresh }: { organizationID: s
   async function sendTest(item: AlertChannel) {
     setBusy(true); setError(""); setNotice("");
     try {
-      await snakeRuleApi.testOrganizationAlertChannel(organizationID, item.id);
+      await sdk.testOrganizationAlertChannel(organizationID, item.id);
       setNotice(`测试通知已发送到「${item.name}」。`);
     } catch (e) { setError(e instanceof Error ? e.message : "测试通知发送失败"); }
     finally { setBusy(false); }
@@ -575,8 +575,8 @@ function UserManagement({ users, onRefresh, activeOrganizationID }: { users: Adm
     setError("");
     try {
       const input = { email: email.trim(), name: name.trim(), password: password || undefined, role };
-      if (editing) await snakeRuleApi.updateOrganizationUser(activeOrganizationID, editing.id, input);
-      else await snakeRuleApi.createOrganizationUser(activeOrganizationID, input);
+      if (editing) await sdk.updateOrganizationUser(activeOrganizationID, editing.id, input);
+      else await sdk.createOrganizationUser(activeOrganizationID, input);
       setFormOpen(false);
       toast.success(editing ? "用户资料已更新" : "用户已创建");
       await onRefresh();
@@ -591,7 +591,7 @@ function UserManagement({ users, onRefresh, activeOrganizationID }: { users: Adm
     setBusy(true);
     setError("");
     try {
-      await snakeRuleApi.deleteOrganizationUser(activeOrganizationID, userID);
+      await sdk.deleteOrganizationUser(activeOrganizationID, userID);
       setConfirmDelete("");
       toast.success("用户已从当前组织移除");
       await onRefresh();
@@ -663,7 +663,7 @@ export function SettingsDialog({
   const canManageOrganization = isSuperAdmin || organizationRole === "organization_admin";
   const [tab, setTab] = useState(platform ? "system" : canManageOrganization ? "users" : "alerts");
   const [users,setUsers]=useState<AdminUser[]>([]);
-  const refreshUsers=useCallback(async()=>{const body=await snakeRuleApi.listOrganizationUsers(activeOrganizationID);setUsers(body.list??[])},[activeOrganizationID]);
+  const refreshUsers=useCallback(async()=>{const body=await sdk.listOrganizationUsers(activeOrganizationID);setUsers(body.list??[])},[activeOrganizationID]);
   useEffect(()=>{if(!platform && canManageOrganization)void refreshUsers().catch((error:Error)=>toast.error("读取用户失败",{description:error.message}))},[platform,canManageOrganization,refreshUsers]);
   const tabs = platform
       ? [

@@ -25,13 +25,25 @@ type Project struct {
 
 // Ruleset is a versioned collection of rules evaluated as one decision.
 type Ruleset struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Version     string     `json:"version"`
-	Description string     `json:"description,omitempty"`
-	Enabled     bool       `json:"enabled"`
-	Alert       *RuleAlert `json:"alert,omitempty"`
-	Rules       []Rule     `json:"rules"`
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Version          string     `json:"version"`
+	PublishedVersion int        `json:"published_version,omitempty"`
+	Description      string     `json:"description,omitempty"`
+	Enabled          bool       `json:"enabled"`
+	Alert            *RuleAlert `json:"alert,omitempty"`
+	Rules            []Rule     `json:"rules"`
+}
+
+// RulesetVersion is an immutable snapshot created by publishing a ruleset.
+type RulesetVersion struct {
+	RulesetID   string    `json:"ruleset_id"`
+	Version     int       `json:"version"`
+	Snapshot    Ruleset   `json:"snapshot"`
+	ContentHash string    `json:"content_hash"`
+	CreatedBy   string    `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+	ChangeNote  string    `json:"change_note,omitempty"`
 }
 
 type Rule struct {
@@ -67,10 +79,11 @@ type Action struct {
 }
 
 type Decision struct {
-	RulesetID string        `json:"ruleset_id"`
-	Version   string        `json:"version"`
-	Matched   bool          `json:"matched"`
-	HitRules  []MatchedRule `json:"hit_rules"`
+	RulesetID        string        `json:"ruleset_id"`
+	Version          string        `json:"version"`
+	PublishedVersion int           `json:"published_version,omitempty"`
+	Matched          bool          `json:"matched"`
+	HitRules         []MatchedRule `json:"hit_rules"`
 }
 
 type MatchedRule struct {
