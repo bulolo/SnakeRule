@@ -216,8 +216,9 @@ SnakeRule/
 ├── frontend/
 │   ├── admin/                        # React 管理工作台与生成 SDK
 │   └── docs/                         # VitePress 文档站点
-├── deploy/                            # 生产 Compose、环境示例和 Nginx 配置
+├── deploy/                            # 生产 Compose、Helm Chart 和 Nginx 配置
 │   ├── docker-compose.prod.yml
+│   ├── helm/                          # Kubernetes 部署 Chart（API、管理端、Nginx）
 │   └── nginx/
 ├── docs/                             # 架构、路线图和技术选型记录
 ├── scripts/                          # 环境初始化、SDK 和版本脚本
@@ -281,6 +282,10 @@ make dev-up
 | `make prod-init` | 生成本地生产配置和随机管理员密码、授权加密密钥。 |
 | `make prod-build` | 构建生产镜像。 |
 | `make prod-up` / `make prod-down` | 启动或停止生产 Compose。 |
+| `make helm-lint` | 检查 `deploy/helm` Kubernetes Chart。 |
+| `make helm-template HELM_VALUES=...` | 根据私有 values 文件渲染 Kubernetes manifests。 |
+| `make helm-install HELM_VALUES=...` | 在 Kubernetes 中安装或升级 SnakeRule。 |
+| `make helm-uninstall` | 卸载 Helm release；后端授权数据 PVC 保留。 |
 | `make check-backend` | 检查 Go 格式、运行 `go vet` 并编译后端。 |
 | `make gen-sdk` | 从 OpenAPI 契约生成管理端 SDK。 |
 | `make set-version v=0.1.1` | 更新项目版本号及关联的版本元数据。 |

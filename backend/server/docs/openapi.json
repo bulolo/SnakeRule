@@ -842,11 +842,19 @@
               "default": 1,
               "description": "0 returns all retained items; 1 enables pagination."
             }
+          },
+          {
+            "name": "ruleset_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Recent invocation logs for the project; facts and credentials are not stored.",
+            "description": "Recent invocation logs for a project, optionally filtered by ruleset; bounded request and response previews are included.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1555,6 +1563,14 @@
           },
           "path": {
             "type": "string"
+          },
+          "request_body": {
+            "type": "string",
+            "description": "Redacted request preview, truncated after 8 KiB."
+          },
+          "response_body": {
+            "type": "string",
+            "description": "Response preview, truncated after 8 KiB."
           }
         },
         "required": [
@@ -1632,6 +1648,9 @@
               1
             ],
             "default": 1
+          },
+          "ruleset_id": {
+            "type": "string"
           }
         }
       },

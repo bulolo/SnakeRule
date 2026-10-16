@@ -1,0 +1,125 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "snakerule.fullname" . }}-backend
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  AUTH_PASSWORD: {{ required "backend.env.authPassword must be provided" .Values.backend.env.authPassword | quote }}
+  LICENSE_ENCRYPTION_KEY: {{ required "backend.env.licenseEncryptionKey must be provided and kept stable" .Values.backend.env.licenseEncryptionKey | quote }}
+  JWT_SECRET: {{ required "backend.env.jwtSecret must be provided" .Values.backend.env.jwtSecret | quote }}
+  {{- if .Values.backend.env.pulseProductPublicKey }}
+  PULSE_PRODUCT_PUBLIC_KEY: {{ .Values.backend.env.pulseProductPublicKey | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "snakerule.fullname" . }}-backend
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+spec:
+  ports:
+    - { name: http, port: {{ .Values.backend.service.port }}, targetPort: http }
+  selector:
+    {{- include "snakerule.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "snakerule.fullname" . }}-backend
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "snakerule.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "snakerule.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 10001
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: {{ .Values.backend.service.port }} }
+          env:
+            - { name: SERVER_PORT, value: {{ .Values.backend.service.port | quote }} }
+            - { name: SERVER_ENV, value: production }
+            - { name: AUTH_EMAIL, value: {{ .Values.backend.env.authEmail | quote }} }
+            - { name: AUTH_NAME, value: {{ .Values.backend.env.authName | quote }} }
+            - { name: AUTH_SESSION_TTL, value: {{ .Values.backend.env.authSessionTTL | quote }} }
+            - { name: LICENSE_STORE_PATH, value: {{ .Values.backend.env.licenseStorePath | quote }} }
+            - { name: LOG_LEVEL, value: {{ .Values.backend.env.logLevel | quote }} }
+            - { name: PULSE_HEARTBEAT_URL, value: {{ .Values.backend.env.pulseHeartbeatURL | quote }} }
+            - { name: PULSE_HEARTBEAT_INTERVAL_SECONDS, value: {{ .Values.backend.env.pulseHeartbeatIntervalSeconds | quote }} }
+            - { name: PULSE_HEARTBEAT_TIMEOUT_SECONDS, value: {{ .Values.backend.env.pulseHeartbeatTimeoutSeconds | quote }} }
+            - name: AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ include "snakerule.fullname" . }}-backend, key: AUTH_PASSWORD }
+            - name: LICENSE_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "snakerule.fullname" . }}-backend, key: LICENSE_ENCRYPTION_KEY }
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: {{ include "snakerule.fullname" . }}-backend, key: JWT_SECRET }
+            {{- if .Values.backend.env.pulseProductPublicKey }}
+            - name: PULSE_PRODUCT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ include "snakerule.fullname" . }}-backend, key: PULSE_PRODUCT_PUBLIC_KEY }
+            {{- end }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: pulse-runtime, mountPath: /run/pulse }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.backend.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "snakerule.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: pulse-runtime
+          emptyDir: {}
+{{- if .Values.backend.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "snakerule.fullname" . }}-data
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.backend.persistence.accessModes | nindent 4 }}
+  {{- if .Values.backend.persistence.storageClass }}
+  storageClassName: {{ .Values.backend.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backend.persistence.size }}
+{{- end }}

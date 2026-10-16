@@ -204,6 +204,8 @@ export interface InvocationLog {
   source: string;
   method?: string;
   path?: string;
+  request_body?: string;
+  response_body?: string;
 }
 
 export interface Pagination {
@@ -222,6 +224,7 @@ export interface InvocationListQuery {
   page?: number;
   size?: number;
   is_pager?: number;
+  ruleset_id?: string;
 }
 
 export interface InvocationHitRule {

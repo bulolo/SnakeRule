@@ -1,4 +1,4 @@
-.PHONY: help dev-init check-dev-env dev dev-up dev-open dev-down dev-clean dev-build dev-rebuild dev-restart dev-restart-backend dev-logs dev-logs-backend dev-logs-admin dev-logs-nginx dev-logs-docs dev-status dev-backend run-backend build-backend format check-backend check-all test gen-sdk set-version docs-install docs-dev docs-build docs-open infra-up infra-down infra-logs docker-up docker-down prod-init check-prod-env prod-build prod-up prod-down publish-github publish-codeup publish-all
+.PHONY: help dev-init check-dev-env dev dev-up dev-open dev-down dev-clean dev-build dev-rebuild dev-restart dev-restart-backend dev-logs dev-logs-backend dev-logs-admin dev-logs-nginx dev-logs-docs dev-status dev-backend run-backend build-backend format check-backend check-all test gen-sdk set-version docs-install docs-dev docs-build docs-open infra-up infra-down infra-logs docker-up docker-down prod-init check-prod-env prod-build prod-up prod-down helm-lint helm-template helm-install helm-upgrade helm-uninstall publish-github publish-codeup publish-all
 
 GO ?= go
 DEV_COMPOSE = docker compose --env-file backend/.env -f docker-compose.dev.yml
@@ -15,6 +15,13 @@ PUSH_DRY_RUN = $(if $(filter 1,$(DRY_RUN)),--dry-run,)
 VERSION_FILE = VERSION
 SDK_SPEC = backend/server/docs/openapi.json
 SDK_OUTPUT = frontend/admin/src/lib/sdk/generated.ts
+HELM ?= helm
+HELM_CHART = deploy/helm
+HELM_RELEASE ?= snakerule
+HELM_NAMESPACE ?= snakerule
+HELM_VALUES ?=
+HELM_SET ?=
+HELM_VALUES_ARG = $(if $(HELM_VALUES),-f $(HELM_VALUES),)
 
 help:
 	@echo "SnakeRule development commands"
@@ -40,6 +47,10 @@ help:
 	@echo "  make prod-build     Build production API, admin, and docs images"
 	@echo "  make prod-up        Start the production Compose stack in the background"
 	@echo "  make prod-down      Stop the production Compose stack"
+	@echo "  make helm-lint      Lint the Kubernetes chart"
+	@echo "  make helm-template  Render the chart locally (HELM_VALUES=path.yaml)"
+	@echo "  make helm-install   Install/upgrade with Helm in namespace $(HELM_NAMESPACE)"
+	@echo "  make helm-uninstall Remove the Helm release (PVC data is retained)"
 	@echo "  make run-backend    Alias for running the API server"
 	@echo "  make build-backend  Build backend/bin/snakerule-server"
 	@echo "  make format         Format Go source"
@@ -96,6 +107,18 @@ prod-up: check-prod-env
 	$(PROD_COMPOSE) up -d --build
 prod-down: check-prod-env
 	$(PROD_COMPOSE) down
+
+helm-lint:
+	$(HELM) lint $(HELM_CHART) --set-string backend.env.authPassword=lint-only --set-string backend.env.licenseEncryptionKey=lint-only --set-string backend.env.jwtSecret=lint-only
+
+helm-template:
+	$(HELM) template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NAMESPACE) $(HELM_VALUES_ARG) $(HELM_SET)
+
+helm-install helm-upgrade:
+	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NAMESPACE) --create-namespace $(HELM_VALUES_ARG) $(HELM_SET) --wait
+
+helm-uninstall:
+	$(HELM) uninstall $(HELM_RELEASE) -n $(HELM_NAMESPACE)
 dev-rebuild: check-dev-env
 	$(DEV_COMPOSE) up -d --build --force-recreate
 dev-down:

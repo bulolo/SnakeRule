@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// InvocationLog records a rule evaluation without storing its facts or credential.
+// InvocationLog records rule evaluations and bounded, redacted request/response previews.
 type InvocationLog struct {
 	ID             string              `json:"id"`
 	WorkspaceID    string              `json:"workspace_id"`
@@ -15,6 +15,8 @@ type InvocationLog struct {
 	StatusCode     int                 `json:"status_code"`
 	Matched        bool                `json:"matched"`
 	HitRules       []InvocationHitRule `json:"hit_rules,omitempty"`
+	RequestBody    string              `json:"request_body,omitempty"`
+	ResponseBody   string              `json:"response_body,omitempty"`
 	DurationMS     int64               `json:"duration_ms"`
 	CreatedAt      time.Time           `json:"created_at"`
 }

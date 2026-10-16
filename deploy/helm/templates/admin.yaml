@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "snakerule.fullname" . }}-admin
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin
+spec:
+  ports:
+    - { name: http, port: {{ .Values.admin.service.port }}, targetPort: http }
+  selector:
+    {{- include "snakerule.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: admin
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "snakerule.fullname" . }}-admin
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin
+spec:
+  replicas: {{ .Values.admin.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "snakerule.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: admin
+  template:
+    metadata:
+      labels:
+        {{- include "snakerule.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: admin
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: admin
+          image: "{{ .Values.admin.image.repository }}:{{ .Values.admin.image.tag }}"
+          imagePullPolicy: {{ .Values.admin.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: {{ .Values.admin.service.port }} }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.admin.resources | nindent 12 }}

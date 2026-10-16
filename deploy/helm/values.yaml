@@ -1,0 +1,40 @@
+nameOverride: ""
+fullnameOverride: ""
+imagePullSecrets: []
+backend:
+  replicaCount: 1
+  image: { repository: snakerule-server, tag: prod, pullPolicy: IfNotPresent }
+  service: { port: 8081 }
+  persistence: { enabled: true, storageClass: "", accessModes: [ReadWriteOnce], size: 2Gi }
+  resources: {}
+  env:
+    authEmail: superadmin@snakerule.cn
+    authName: SuperAdmin
+    authSessionTTL: 24h
+    authPassword: ""
+    licenseStorePath: /data/license.json
+    licenseEncryptionKey: ""
+    jwtSecret: ""
+    pulseProductPublicKey: ""
+    pulseHeartbeatURL: https://pulse.szplanner.com/api/snakerule/v1/telemetry/heartbeat
+    pulseHeartbeatIntervalSeconds: "240"
+    pulseHeartbeatTimeoutSeconds: "30"
+    logLevel: info
+admin:
+  replicaCount: 1
+  image: { repository: snakerule-admin, tag: prod, pullPolicy: IfNotPresent }
+  service: { port: 80 }
+  resources: {}
+gateway:
+  replicaCount: 1
+  image: { repository: nginx, tag: 1.27-alpine, pullPolicy: IfNotPresent }
+  service: { type: LoadBalancer, port: 80, annotations: {} }
+  resources: {}
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: snakerule.example.com
+      paths: [{ path: /, pathType: Prefix }]
+  tls: []

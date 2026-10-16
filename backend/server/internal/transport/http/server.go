@@ -392,6 +392,8 @@ func (s *Server) evaluate(w http.ResponseWriter, r *http.Request) {
 	startedAt := time.Now()
 	recorder := &responseStatusRecorder{ResponseWriter: w, status: http.StatusOK}
 	w = recorder
+	var requestPayload bytes.Buffer
+	r.Body = io.NopCloser(io.TeeReader(r.Body, &requestPayload))
 	var rulesetID string
 	var decision domain.Decision
 	defer func() {
@@ -417,7 +419,8 @@ func (s *Server) evaluate(w http.ResponseWriter, r *http.Request) {
 			WorkspaceID: repo.WorkspaceIDFrom(r.Context()), ProjectID: repo.ProjectIDFrom(r.Context()),
 			RulesetID: rulesetID, Method: r.Method, Path: r.URL.Path, Source: source, CredentialType: credential.Type, StatusCode: recorder.status,
 			Matched:  recorder.status >= 200 && recorder.status < 300 && decision.Matched,
-			HitRules: hits, DurationMS: time.Since(startedAt).Milliseconds(), CreatedAt: startedAt.UTC(),
+			HitRules: hits, RequestBody: captureInvocationBody(requestPayload.Bytes()), ResponseBody: captureInvocationBody(recorder.body),
+			DurationMS: time.Since(startedAt).Milliseconds(), CreatedAt: startedAt.UTC(),
 		})
 	}()
 	var req struct {
@@ -482,6 +485,15 @@ func (s *Server) listProjectInvocations(w http.ResponseWriter, r *http.Request) 
 	if s.invocationLogs != nil {
 		items = s.invocationLogs.List(repo.WorkspaceIDFrom(r.Context()), projectID)
 	}
+	if rulesetID := strings.TrimSpace(r.URL.Query().Get("ruleset_id")); rulesetID != "" {
+		filtered := make([]domain.InvocationLog, 0, len(items))
+		for _, item := range items {
+			if item.RulesetID == rulesetID {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
 	total := len(items)
 	if isPager == 0 {
 		size = total
@@ -508,7 +520,10 @@ type responseStatusRecorder struct {
 	http.ResponseWriter
 	status      int
 	wroteHeader bool
+	body        []byte
 }
+
+const invocationPayloadLimit = 8 * 1024
 
 func (w *responseStatusRecorder) WriteHeader(status int) {
 	if w.wroteHeader {
@@ -520,7 +535,49 @@ func (w *responseStatusRecorder) WriteHeader(status int) {
 }
 
 func (w *responseStatusRecorder) Write(data []byte) (int, error) {
+	if remaining := invocationPayloadLimit + 1 - len(w.body); remaining > 0 {
+		if remaining > len(data) {
+			remaining = len(data)
+		}
+		w.body = append(w.body, data[:remaining]...)
+	}
 	return w.ResponseWriter.Write(data)
+}
+
+func captureInvocationBody(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var value any
+	if json.Unmarshal(raw, &value) == nil {
+		redactInvocationValue(value)
+		if formatted, err := json.MarshalIndent(value, "", "  "); err == nil {
+			raw = formatted
+		}
+	}
+	if len(raw) <= invocationPayloadLimit {
+		return string(raw)
+	}
+	preview, _ := json.Marshal(string(raw[:invocationPayloadLimit]))
+	return "{\n  \"_truncated\": true,\n  \"_preview\": " + string(preview) + "\n}"
+}
+
+func redactInvocationValue(value any) {
+	switch item := value.(type) {
+	case map[string]any:
+		for key, nested := range item {
+			normalized := strings.NewReplacer("_", "", "-", "").Replace(strings.ToLower(key))
+			if strings.Contains(normalized, "password") || strings.Contains(normalized, "passwd") || strings.Contains(normalized, "secret") || strings.Contains(normalized, "token") || strings.Contains(normalized, "authorization") || strings.Contains(normalized, "apikey") || strings.Contains(normalized, "privatekey") {
+				item[key] = "[已隐藏]"
+				continue
+			}
+			redactInvocationValue(nested)
+		}
+	case []any:
+		for _, nested := range item {
+			redactInvocationValue(nested)
+		}
+	}
 }
 func (s *Server) writeServiceError(w http.ResponseWriter, err error) {
 	switch {

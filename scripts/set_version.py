@@ -12,6 +12,7 @@ GO_VERSION_FILE = ROOT / "backend/server/internal/version/version.go"
 OPENAPI_FILE = ROOT / "backend/server/docs/openapi.json"
 ADMIN_PACKAGE_FILE = ROOT / "frontend/admin/package.json"
 ADMIN_LOCK_FILE = ROOT / "frontend/admin/package-lock.json"
+HELM_CHART_FILE = ROOT / "deploy/helm/Chart.yaml"
 SEMVER = re.compile(r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 
 
@@ -37,12 +38,19 @@ def main() -> int:
     if admin_lock:
         admin_lock["version"] = version
         admin_lock.get("packages", {}).get("", {})["version"] = version
+    helm_chart = HELM_CHART_FILE.read_text()
+    helm_chart, chart_version_count = re.subn(r"(?m)^version: [^\n]+$", f"version: {version}", helm_chart, count=1)
+    helm_chart, app_version_count = re.subn(r'(?m)^appVersion: "[^"\n]+"$', f'appVersion: "{version}"', helm_chart, count=1)
+    if chart_version_count != 1 or app_version_count != 1:
+        print(f"Could not update Helm chart version in {HELM_CHART_FILE.relative_to(ROOT)}", file=sys.stderr)
+        return 1
     VERSION_FILE.write_text(version + "\n")
     GO_VERSION_FILE.write_text(updated)
     OPENAPI_FILE.write_text(json.dumps(openapi, ensure_ascii=False, indent=2) + "\n")
     ADMIN_PACKAGE_FILE.write_text(json.dumps(admin_package, ensure_ascii=False, indent=2) + "\n")
     if admin_lock:
         ADMIN_LOCK_FILE.write_text(json.dumps(admin_lock, ensure_ascii=False, indent=2) + "\n")
+    HELM_CHART_FILE.write_text(helm_chart)
     print(f"SnakeRule version set to {version}")
     return 0
 
