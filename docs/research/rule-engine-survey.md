@@ -12,7 +12,7 @@
 | DSL | Go struct 对应 JSON 规则集与递归条件树 | 尚无独立 JSON Schema 文件或版本迁移工具 |
 | 条件求值 | `internal/engine/evaluator` | 支持 `all`、`any`、`not` 与内置比较操作符 |
 | API | Go 标准库 `net/http` / `ServeMux` | 适合当前 API 规模；尚未引入独立 API gateway 服务 |
-| 存储 | 进程内存仓储 | 重启会清空；Compose 中 PostgreSQL/Redis 不参与规则存储 |
+| 存储 | PostgreSQL 实体表仓储 | 重启可恢复；进程内缓存要求单 API 副本；Redis 不参与规则存储 |
 | 管理端 | React + TypeScript + Vite | 画布和 JSON 双模式，共用 OpenAPI 生成的 SDK |
 | 执行动作 | 决策响应中的声明数据 | 没有 Webhook、变量修改或其他外部副作用 |
 

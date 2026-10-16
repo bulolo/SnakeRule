@@ -23,15 +23,15 @@ type Config struct {
 }
 
 type Stores struct {
-	License    *licensing.Manager
-	Workspaces repo.WorkspaceRepository
-	Projects   repo.ProjectRepository
-	Rulesets   repo.RulesetRepository
+	License       *licensing.Manager
+	Organizations repo.OrganizationRepository
+	Projects      repo.ProjectRepository
+	Rulesets      repo.RulesetRepository
 }
 
 func Start(ctx context.Context, cfg Config, stores Stores) {
 	if cfg.Endpoint == "" {
-		cfg.Endpoint = "https://pulse.szplanner.com/api/snakerule/v1/telemetry/heartbeat"
+		cfg.Endpoint = "https://pulse.szplanner.com/api/v1/snakerule/v1/telemetry/heartbeat"
 	}
 	if cfg.Interval <= 0 {
 		cfg.Interval = 4 * time.Minute
@@ -91,20 +91,20 @@ func send(parent context.Context, cfg Config, stores Stores) error {
 
 func collect(ctx context.Context, cfg Config, installationID string, stores Stores) map[string]any {
 	hostname, _ := os.Hostname()
-	workspaces, projects, rulesets := 0, 0, 0
-	if stores.Workspaces != nil && stores.Projects != nil && stores.Rulesets != nil {
-		items, err := stores.Workspaces.List(ctx)
+	organizations, projects, rulesets := 0, 0, 0
+	if stores.Organizations != nil && stores.Projects != nil && stores.Rulesets != nil {
+		items, err := stores.Organizations.List(ctx)
 		if err == nil {
-			workspaces = len(items)
-			for _, workspace := range items {
-				workspaceCtx := repo.WithWorkspace(ctx, workspace.ID)
-				projectItems, err := stores.Projects.List(workspaceCtx)
+			organizations = len(items)
+			for _, organization := range items {
+				organizationCtx := repo.WithOrganization(ctx, organization.ID)
+				projectItems, err := stores.Projects.List(organizationCtx)
 				if err != nil {
 					continue
 				}
 				projects += len(projectItems)
 				for _, project := range projectItems {
-					ruleItems, err := stores.Rulesets.List(repo.WithProject(workspaceCtx, project.ID))
+					ruleItems, err := stores.Rulesets.List(repo.WithProject(organizationCtx, project.ID))
 					if err == nil {
 						rulesets += len(ruleItems)
 					}
@@ -133,9 +133,9 @@ func collect(ctx context.Context, cfg Config, installationID string, stores Stor
 		"resources": map[string]any{"cpu_cores": runtime.NumCPU()},
 		"health":    map[string]any{"boot_ok": true, "license_valid": true},
 		"metrics": map[string]any{
-			"workspaces": workspaces,
-			"projects":   projects,
-			"rulesets":   rulesets,
+			"organizations": organizations,
+			"projects":      projects,
+			"rulesets":      rulesets,
 		},
 		"uptime_seconds": int64(time.Since(startedAt).Seconds()),
 	}

@@ -23,6 +23,12 @@ backend:
     pulseHeartbeatIntervalSeconds: "240"
     pulseHeartbeatTimeoutSeconds: "30"
     logLevel: info
+database:
+  image: { repository: postgres, tag: 16-alpine, pullPolicy: IfNotPresent }
+  name: snakerule
+  user: snakerule
+  password: ""
+  storage: { storageClass: "", accessModes: [ReadWriteOnce], size: 10Gi }
 admin:
   replicaCount: 1
   image: { repository: snakerule-admin, tag: prod, pullPolicy: IfNotPresent }

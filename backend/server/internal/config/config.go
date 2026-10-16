@@ -104,7 +104,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("auth.password", "")
 	viper.SetDefault("auth.session_ttl", "24h")
 	viper.SetDefault("license.store_path", "./data/license.json")
-	viper.SetDefault("pulse.heartbeat_url", "https://pulse.szplanner.com/api/snakerule/v1/telemetry/heartbeat")
+	viper.SetDefault("pulse.heartbeat_url", "https://pulse.szplanner.com/api/v1/snakerule/v1/telemetry/heartbeat")
 	viper.SetDefault("pulse.heartbeat_interval_seconds", 240)
 	viper.SetDefault("pulse.heartbeat_timeout_seconds", 30)
 	viper.SetDefault("database.max_open_conns", 20)
@@ -122,6 +122,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.Auth.SessionTTL <= 0 {
 		return nil, errors.New("AUTH_SESSION_TTL must be positive")
+	}
+	if strings.TrimSpace(cfg.Database.URL) == "" {
+		return nil, errors.New("DATABASE_URL must be configured")
 	}
 	if strings.TrimSpace(cfg.Auth.Email) == "" || strings.TrimSpace(cfg.Auth.Password) == "" {
 		return nil, errors.New("AUTH_EMAIL and AUTH_PASSWORD must be configured")

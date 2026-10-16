@@ -12,6 +12,7 @@ export interface SessionUser {
   email: string;
   name: string;
   is_superadmin: boolean;
+  role?: "superadmin" | "organization_admin" | "organization_member" | "project_admin" | "project_member";
 }
 
 export interface SessionResponse {
@@ -68,72 +69,77 @@ export interface Ruleset {
 }
 
 export interface RulesetList {
-  items: Ruleset[];
+  list: Ruleset[];
+  pagination: Pagination;
 }
 
 export interface EvaluateRequest {
-  rulesetId: string;
+  ruleset_id: string;
   facts: Record<string, JSONValue>;
   ruleset?: Ruleset;
 }
 
 export interface MatchedRule {
-  ruleId: string;
+  rule_id: string;
   name: string;
   priority: number;
   actions?: Action[];
 }
 
 export interface Decision {
-  rulesetId: string;
+  ruleset_id: string;
   version: string;
   matched: boolean;
-  hitRules: MatchedRule[];
+  hit_rules: MatchedRule[];
 }
 
 export interface AlertChannel {
   id: string;
   name: string;
-  type: string;
+  type: "webhook" | "wecom" | "dingtalk" | "feishu" | "internal";
   url: string;
   enabled: boolean;
   has_secret: boolean;
+  organization_id?: string;
 }
 
 export interface AlertChannelInput {
   name: string;
-  type: string;
+  type: "webhook" | "wecom" | "dingtalk" | "feishu";
   url: string;
   secret?: string;
   enabled?: boolean;
 }
 
-export interface Workspace {
+export interface Organization {
   id: string;
   name: string;
   slug: string;
   description?: string;
   created_at: string;
   updated_at: string;
+  admin_user_id?: string;
 }
 
-export interface WorkspaceList {
-  items: Workspace[];
-  active_workspace_id: string;
+export interface OrganizationList {
+  list: Organization[];
+  pagination: Pagination;
+  active_organization_id: string;
 }
 
-export interface WorkspaceInput {
+export interface OrganizationInput {
   name: string;
   slug?: string;
   description?: string;
+  admin_user_id?: string;
 }
 
-export interface ActiveWorkspaceRequest {
-  workspace_id: string;
+export interface ActiveOrganizationRequest {
+  organization_id: string;
 }
 
-export interface ActiveWorkspaceResponse {
-  active_workspace_id: string;
+export interface ActiveOrganizationResponse {
+  active_organization_id: string;
 }
 
 export interface Project {
@@ -150,7 +156,7 @@ export interface ProjectInput {
   name: string;
   slug?: string;
   description?: string;
-  template?: string;
+  template?: "" | "ecommerce";
   icon?: string;
 }
 
@@ -159,12 +165,16 @@ export interface ProjectKey {
   name: string;
   prefix: string;
   created_at: string;
-  type?: string;
+  type?: "apikey" | "jwt";
+  credential_kind?: "api_key" | "access_token" | "signing_key";
+  expires_at?: string;
 }
 
 export interface CreateProjectKeyInput {
   name: string;
-  type?: string;
+  type?: "apikey" | "jwt";
+  signing_key?: boolean;
+  expires_at?: string;
 }
 
 export interface ActiveProjectRequest {
@@ -192,16 +202,16 @@ export interface Notification {
 
 export interface InvocationLog {
   id: string;
-  workspace_id: string;
+  organization_id: string;
   project_id: string;
   ruleset_id?: string;
-  credential_type: string;
+  credential_type: "session" | "apikey" | "jwt";
   status_code: number;
   matched: boolean;
   hit_rules?: InvocationHitRule[];
   duration_ms: number;
   created_at: string;
-  source: string;
+  source: "designer_simulation" | "project_api" | "management";
   method?: string;
   path?: string;
   request_body?: string;
@@ -209,7 +219,7 @@ export interface InvocationLog {
 }
 
 export interface Pagination {
-  is_pager: number;
+  is_pager: 0 | 1;
   page: number;
   size: number;
   total: number;
@@ -223,7 +233,7 @@ export interface InvocationListResponse {
 export interface InvocationListQuery {
   page?: number;
   size?: number;
-  is_pager?: number;
+  is_pager?: 0 | 1;
   ruleset_id?: string;
 }
 
@@ -234,8 +244,107 @@ export interface InvocationHitRule {
   actions?: string[];
 }
 
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "organization_admin" | "organization_member" | "superadmin";
+  organization_ids: string[];
+  created_at: string;
+  organization_roles?: Record<string, JSONValue>;
+  project_roles?: Record<string, JSONValue>;
+}
+
+export interface SaveUserInput {
+  id?: string;
+  email: string;
+  name: string;
+  role: "organization_admin" | "organization_member";
+  password?: string;
+  organization_ids?: string[];
+}
+
+export interface UserList {
+  list: AdminUser[];
+  pagination: Pagination;
+}
+
+export interface ProjectMember {
+  user: ProjectMemberUser;
+  role: "project_admin" | "project_member";
+}
+
+export interface ProjectMemberList {
+  list: ProjectMember[];
+  pagination: Pagination;
+  can_manage: boolean;
+}
+
+export interface ProjectMemberInput {
+  user_id: string;
+  role: "project_admin" | "project_member";
+}
+
+export interface ProjectMemberRoleInput {
+  role: "project_admin" | "project_member";
+}
+
+export interface ProjectMemberUser {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface PlatformSettings {
+  name: string;
+  tagline: string;
+  logo_url: string;
+}
+
+export interface APIResponse {
+  code: number;
+  msg: string;
+  error_code?: string;
+  data?: JSONValue;
+}
+
+export interface APIErrorResponse {
+  code: number;
+  msg: string;
+  error_code: string;
+}
+
+export interface ProjectList {
+  list: Project[];
+  pagination: Pagination;
+  active_project_id: string;
+}
+
+export interface AlertChannelList {
+  list: AlertChannel[];
+  pagination: Pagination;
+}
+
+export interface NotificationList {
+  list: Notification[];
+  pagination: Pagination;
+}
+
+export interface ProjectKeyList {
+  list: ProjectKey[];
+  pagination: Pagination;
+}
+
 export class SnakeRuleApiError extends Error {
-  constructor(public readonly status: number, message: string) { super(message); }
+  constructor(public readonly status: number, message: string, public readonly errorCode?: string) { super(message); }
+}
+
+export async function readAPIResponse<T>(response: Response): Promise<T> {
+  const raw = await response.text();
+  let body: any;
+  try { body = raw ? JSON.parse(raw) : {}; } catch { throw new SnakeRuleApiError(response.status, `接口返回非 JSON 响应（HTTP ${response.status}）：${raw.slice(0, 160)}`); }
+  if (!response.ok || body?.code !== 0) throw new SnakeRuleApiError(response.status, body?.msg ?? response.statusText, body?.error_code);
+  return body.data as T;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -244,19 +353,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { ...(init?.body && !multipart ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
   });
-  if (!response.ok) {
-    if (response.status === 401 && !path.startsWith('/api/v1/auth/')) window.dispatchEvent(new Event('snakerule:unauthorized'));
-    const body = await response.json().catch(() => ({}));
-    throw new SnakeRuleApiError(response.status, body?.error?.message ?? response.statusText);
-  }
-  return (response.status === 204 ? undefined : response.json()) as Promise<T>;
+  if (response.status === 401 && !path.startsWith('/api/v1/auth/')) window.dispatchEvent(new Event('snakerule:unauthorized'));
+  if (response.status === 204) return undefined as T;
+  return readAPIResponse<T>(response);
 }
 
 export const snakeRuleApi = {
+  getPlatformSettings: () => request<PlatformSettings>('/api/v1/platform/settings'),
+  updatePlatformSettings: (input: PlatformSettings) => request<PlatformSettings>('/api/v1/platform/settings', { method: 'PUT', body: JSON.stringify(input) }),
   getSession: () => request<SessionResponse>('/api/v1/auth/session'),
   login: (input: LoginRequest) => request<SessionResponse>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify(input) }),
   logout: () => request<{ authenticated: boolean }>('/api/v1/auth/logout', { method: 'POST' }),
-  listRulesets: () => request<RulesetList>('/api/v1/rulesets'),
+  listRulesets: () => request<RulesetList>('/api/v1/rulesets?is_pager=0'),
   getRuleset: (id: string) => request<Ruleset>(`/api/v1/rulesets/${encodeURIComponent(id)}`),
   saveRuleset: (ruleset: Ruleset) => request<Ruleset>(`/api/v1/rulesets/${encodeURIComponent(ruleset.id)}`, { method: 'PUT', body: JSON.stringify(ruleset) }),
   deleteRuleset: (id: string) => request<void>(`/api/v1/rulesets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
@@ -265,9 +373,26 @@ export const snakeRuleApi = {
   getLicense: () => request<LicenseStatus>('/api/v1/platform/license'),
   uploadLicense: (file: File) => { const form = new FormData(); form.append('file', file); return request<LicenseStatus>('/api/v1/platform/license', { method: 'POST', body: form }); },
   clearLicense: () => request<LicenseStatus>('/api/v1/platform/license', { method: 'DELETE' }),
-  listWorkspaces: () => request<WorkspaceList>('/api/v1/workspaces'),
-  createWorkspace: (input: WorkspaceInput) => request<Workspace>('/api/v1/workspaces', { method: 'POST', body: JSON.stringify(input) }),
-  updateWorkspace: (id: string, input: WorkspaceInput) => request<Workspace>(`/api/v1/workspaces/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }),
-  deleteWorkspace: (id: string) => request<void>(`/api/v1/workspaces/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  setActiveWorkspace: (workspace_id: string) => request<ActiveWorkspaceResponse>('/api/v1/workspaces/active', { method: 'PUT', body: JSON.stringify({ workspace_id }) }),
+  listOrganizations: () => request<OrganizationList>('/api/v1/organizations?is_pager=0'),
+  listProjects: () => request<ProjectList>('/api/v1/projects?is_pager=0'),
+  createOrganization: (input: OrganizationInput) => request<Organization>('/api/v1/organizations', { method: 'POST', body: JSON.stringify(input) }),
+  updateOrganization: (id: string, input: OrganizationInput) => request<Organization>(`/api/v1/organizations/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }),
+  deleteOrganization: (id: string) => request<void>(`/api/v1/organizations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  setActiveOrganization: (organization_id: string) => request<ActiveOrganizationResponse>('/api/v1/organizations/active', { method: 'PUT', body: JSON.stringify({ organization_id }) }),
+  listOrganizationUsers: (organizationID: string) => request<UserList>(`/api/v1/organizations/${encodeURIComponent(organizationID)}/users?is_pager=0`),
+  createOrganizationUser: (organizationID: string, input: SaveUserInput) => request<{ item: AdminUser }>(`/api/v1/organizations/${encodeURIComponent(organizationID)}/users`, { method: 'POST', body: JSON.stringify(input) }),
+  updateOrganizationUser: (organizationID: string, id: string, input: SaveUserInput) => request<{ item: AdminUser }>(`/api/v1/organizations/${encodeURIComponent(organizationID)}/users/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }),
+  deleteOrganizationUser: (organizationID: string, id: string) => request<void>(`/api/v1/organizations/${encodeURIComponent(organizationID)}/users/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  listOrganizationAlertChannels: (organizationID: string) => request<AlertChannelList>(`/api/v1/organizations/${encodeURIComponent(organizationID)}/alert-channels?is_pager=0`),
+  createOrganizationAlertChannel: (organizationID: string, input: AlertChannelInput) => request<AlertChannel>(`/api/v1/organizations/${encodeURIComponent(organizationID)}/alert-channels`, { method: 'POST', body: JSON.stringify(input) }),
+  updateOrganizationAlertChannel: (organizationID: string, id: string, input: AlertChannelInput) => request<AlertChannel>(`/api/v1/organizations/${encodeURIComponent(organizationID)}/alert-channels/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }),
+  deleteOrganizationAlertChannel: (organizationID: string, id: string) => request<void>(`/api/v1/organizations/${encodeURIComponent(organizationID)}/alert-channels/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  testOrganizationAlertChannel: (organizationID: string, id: string) => request<{ status: string }>(`/api/v1/organizations/${encodeURIComponent(organizationID)}/alert-channels/${encodeURIComponent(id)}/test`, { method: 'POST' }),
+  listProjectMembers: (id: string) => request<ProjectMemberList>(`/api/v1/projects/${encodeURIComponent(id)}/members?is_pager=0`),
+  listProjectMemberCandidates: (id: string) => request<UserList>(`/api/v1/projects/${encodeURIComponent(id)}/member-candidates?is_pager=0`),
+  listProjectCredentials: (id: string) => request<ProjectKeyList>(`/api/v1/projects/${encodeURIComponent(id)}/credentials?is_pager=0`),
+  listNotifications: () => request<NotificationList>('/api/v1/notifications?is_pager=0'),
+  addProjectMember: (id: string, input: ProjectMemberInput) => request<{ user: ProjectMemberUser; role: string }>(`/api/v1/projects/${encodeURIComponent(id)}/members`, { method: 'POST', body: JSON.stringify(input) }),
+  updateProjectMember: (id: string, userId: string, role: 'project_admin' | 'project_member') => request<void>(`/api/v1/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'PUT', body: JSON.stringify({ role }) }),
+  removeProjectMember: (id: string, userId: string) => request<void>(`/api/v1/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' }),
 };

@@ -8,21 +8,21 @@ import (
 	"github.com/szplanner/snakerule/internal/domain"
 )
 
-type MemoryInvocationLogRepository struct {
+type PersistentInvocationLogRepository struct {
 	mu    sync.RWMutex
 	items []domain.InvocationLog
 	path  string
 }
 
-func NewPersistentInvocationLogRepository(path string) (*MemoryInvocationLogRepository, error) {
-	r := &MemoryInvocationLogRepository{path: path}
-	if err := loadJSONFile(path, &r.items); err != nil {
+func NewPersistentInvocationLogRepository(path string) (*PersistentInvocationLogRepository, error) {
+	r := &PersistentInvocationLogRepository{path: path}
+	if err := loadPersistent(path, &r.items); err != nil {
 		return nil, err
 	}
 	return r, nil
 }
 
-func (r *MemoryInvocationLogRepository) Add(item domain.InvocationLog) error {
+func (r *PersistentInvocationLogRepository) Add(item domain.InvocationLog) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if item.ID == "" {
@@ -32,15 +32,15 @@ func (r *MemoryInvocationLogRepository) Add(item domain.InvocationLog) error {
 	if len(r.items) > 2000 {
 		r.items = append([]domain.InvocationLog(nil), r.items[len(r.items)-2000:]...)
 	}
-	return saveJSONFile(r.path, r.items)
+	return savePersistent(r.path, r.items)
 }
 
-func (r *MemoryInvocationLogRepository) List(workspaceID, projectID string) []domain.InvocationLog {
+func (r *PersistentInvocationLogRepository) List(organizationID, projectID string) []domain.InvocationLog {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	items := make([]domain.InvocationLog, 0)
 	for _, item := range r.items {
-		if item.WorkspaceID == workspaceID && item.ProjectID == projectID {
+		if item.OrganizationID == organizationID && item.ProjectID == projectID {
 			items = append(items, item)
 		}
 	}
@@ -48,15 +48,15 @@ func (r *MemoryInvocationLogRepository) List(workspaceID, projectID string) []do
 	return items
 }
 
-func (r *MemoryInvocationLogRepository) DeleteProject(workspaceID, projectID string) error {
+func (r *PersistentInvocationLogRepository) DeleteProject(organizationID, projectID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	kept := r.items[:0]
 	for _, item := range r.items {
-		if item.WorkspaceID != workspaceID || item.ProjectID != projectID {
+		if item.OrganizationID != organizationID || item.ProjectID != projectID {
 			kept = append(kept, item)
 		}
 	}
 	r.items = kept
-	return saveJSONFile(r.path, r.items)
+	return savePersistent(r.path, r.items)
 }

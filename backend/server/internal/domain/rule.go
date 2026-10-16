@@ -2,12 +2,13 @@ package domain
 
 import "time"
 
-// Workspace groups rulesets for an independent team or project area.
-type Workspace struct {
+// Organization groups rulesets for an independent team or project area.
+type Organization struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
 	Slug        string    `json:"slug"`
 	Description string    `json:"description,omitempty"`
+	AdminUserID string    `json:"admin_user_id,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -66,14 +67,14 @@ type Action struct {
 }
 
 type Decision struct {
-	RulesetID string        `json:"rulesetId"`
+	RulesetID string        `json:"ruleset_id"`
 	Version   string        `json:"version"`
 	Matched   bool          `json:"matched"`
-	HitRules  []MatchedRule `json:"hitRules"`
+	HitRules  []MatchedRule `json:"hit_rules"`
 }
 
 type MatchedRule struct {
-	RuleID   string   `json:"ruleId"`
+	RuleID   string   `json:"rule_id"`
 	Name     string   `json:"name"`
 	Priority int      `json:"priority"`
 	Actions  []Action `json:"actions,omitempty"`

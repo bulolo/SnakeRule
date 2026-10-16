@@ -45,16 +45,16 @@ async function request(path, options = {}) {
     ...options,
     headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers }
   });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data?.error?.message || `请求失败 (${response.status})`);
+  const body = response.status === 204 ? null : await response.json();
+  if (!response.ok || (body && body.code !== 0)) {
+    throw new Error(body?.msg || `请求失败 (${response.status})`);
   }
-  return response.status === 204 ? null : response.json();
+  return body?.data ?? null;
 }
 
 async function refreshRulesets(selectID = state.currentID) {
   const data = await request("/api/v1/rulesets");
-  const items = data.items || [];
+  const items = data.list || [];
   $("ruleset-count").textContent = `${items.length} 个`;
   picker.replaceChildren();
   const list = $("ruleset-list");
@@ -117,7 +117,7 @@ $("save").addEventListener("click", async () => {
     state.currentID = item.id;
     await refreshRulesets(item.id);
     showError("save-state", "已保存到当前服务");
-    setTimeout(() => { $("save-state").textContent = "内存模式 · 重启后数据会重置"; }, 2200);
+    setTimeout(() => { $("save-state").textContent = "保存到 PostgreSQL"; }, 2200);
   } catch (error) { showError("editor-error", error.message); }
 });
 
@@ -132,7 +132,7 @@ $("evaluate").addEventListener("click", async () => {
     await refreshRulesets(item.id);
     const result = await request("/api/v1/engine/evaluate", {
       method: "POST",
-      body: JSON.stringify({ rulesetId: item.id, facts: input })
+      body: JSON.stringify({ ruleset_id: item.id, facts: input })
     });
     $("result").textContent = pretty(result);
     const badge = $("result-badge");

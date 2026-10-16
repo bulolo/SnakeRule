@@ -5,7 +5,7 @@ import "time"
 // InvocationLog records rule evaluations and bounded, redacted request/response previews.
 type InvocationLog struct {
 	ID             string              `json:"id"`
-	WorkspaceID    string              `json:"workspace_id"`
+	OrganizationID string              `json:"organization_id"`
 	ProjectID      string              `json:"project_id"`
 	RulesetID      string              `json:"ruleset_id,omitempty"`
 	Method         string              `json:"method"`

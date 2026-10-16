@@ -58,8 +58,8 @@ help:
 	@echo "  make test           Run backend Go tests"
 	@echo "  make gen-sdk        Generate TypeScript API types from $(SDK_SPEC)"
 	@echo "  make set-version v=0.1.1 Update the project version"
-	@echo "  make infra-up       Start optional PostgreSQL and Redis containers"
-	@echo "  make infra-down     Stop optional infrastructure containers"
+	@echo "  make infra-up       Start PostgreSQL and optional Redis containers"
+	@echo "  make infra-down     Stop infrastructure containers"
 	@echo "  make infra-logs     Follow optional infrastructure logs"
 	@echo "  make publish-github [DRY_RUN=1] Push current branch to $(GITHUB_URL)"
 	@echo "  make publish-codeup [DRY_RUN=1] Push current branch to Codeup ($(CODEUP_REMOTE))"
@@ -109,7 +109,7 @@ prod-down: check-prod-env
 	$(PROD_COMPOSE) down
 
 helm-lint:
-	$(HELM) lint $(HELM_CHART) --set-string backend.env.authPassword=lint-only --set-string backend.env.licenseEncryptionKey=lint-only --set-string backend.env.jwtSecret=lint-only
+	$(HELM) lint $(HELM_CHART) --set-string backend.env.authPassword=lint-only --set-string backend.env.licenseEncryptionKey=lint-only --set-string backend.env.jwtSecret=lint-only --set-string database.password=lint-only
 
 helm-template:
 	$(HELM) template $(HELM_RELEASE) $(HELM_CHART) -n $(HELM_NAMESPACE) $(HELM_VALUES_ARG) $(HELM_SET)
@@ -173,7 +173,7 @@ gen-sdk:
 set-version:
 	python3 scripts/set_version.py "$(v)"
 
-# PostgreSQL and Redis are optional at this stage; the API uses in-memory rulesets.
+# PostgreSQL is used by the API; Redis remains optional infrastructure.
 infra-up docker-up:
 	$(DEV_COMPOSE) --profile infra up -d postgres redis
 

@@ -2,8 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   snakeRuleApi,
   type LicenseStatus,
-  type Workspace,
+  type PlatformSettings,
+  type AlertChannel as APIAlertChannel,
+  type AdminUser as APIAdminUser,
+  type Organization,
 } from "../lib/sdk/generated";
+import { CustomSelect } from "./common";
+import { toast } from "sonner";
+
+type AdminUser = APIAdminUser;
 
 function LicenseSettings({ version }: { version: string }) {
   const [status, setStatus] = useState<LicenseStatus | null>(null);
@@ -52,9 +59,9 @@ function LicenseSettings({ version }: { version: string }) {
     <>
       <div className="settings-hero">
         <div>
-          <small>PLATFORM SYSTEM</small>
-          <h2>系统信息</h2>
-          <p>运行版本与当前产品授权状态。</p>
+          <small>LICENSE & VERSION</small>
+          <h2>授权与版本</h2>
+          <p>查看当前运行版本、产品授权和实例标识。</p>
         </div>
       </div>
       <section className="license-summary-card">
@@ -79,7 +86,7 @@ function LicenseSettings({ version }: { version: string }) {
           </div>
           <div>
             <small>版本类型</small>
-            <b>{status?.is_licensed ? "Enterprise" : "Community"}</b>
+            <b>{status?.edition ? status.edition[0].toUpperCase() + status.edition.slice(1) : status?.is_licensed ? "Enterprise" : "Community"}</b>
           </div>
           <div>
             <small>授权状态</small>
@@ -102,10 +109,6 @@ function LicenseSettings({ version }: { version: string }) {
             <div>
               <small>授权客户</small>
               <b>{status.customer || "—"}</b>
-            </div>
-            <div>
-              <small>授权类型</small>
-              <b>{status.license_type || status.edition}</b>
             </div>
             <div>
               <small>授权到期</small>
@@ -169,7 +172,7 @@ function LicenseSettings({ version }: { version: string }) {
         </div>
       </section>
       <p className="settings-readonly-note">
-        授权凭证只在服务端加密保存，不会返回到浏览器。授权功能必须由后端按功能点校验；前端状态仅用于展示。
+        授权凭证仅保存在服务端。
       </p>
       {error && (
         <div className="login-error license-error" role="alert">
@@ -180,18 +183,60 @@ function LicenseSettings({ version }: { version: string }) {
   );
 }
 
-function WorkspaceSettings({
+function PlatformBrandSettings({ value, onSave }: { value: PlatformSettings; onSave: (value: PlatformSettings) => void }) {
+  const [name, setName] = useState(value.name);
+  const [tagline, setTagline] = useState(value.tagline);
+  const [logoURL, setLogoURL] = useState(value.logo_url);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setName(value.name); setTagline(value.tagline); setLogoURL(value.logo_url); }, [value]);
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true);
+    try {
+      const result = await snakeRuleApi.updatePlatformSettings({ name: name.trim(), tagline: tagline.trim(), logo_url: logoURL.trim() });
+      onSave(result); toast.success("平台品牌配置已保存");
+    } catch (e) { toast.error("保存平台品牌配置失败", { description: e instanceof Error ? e.message : "请稍后重试" }); }
+    finally { setBusy(false); }
+  }
+  return <section className="settings-brand-config">
+    <div className="settings-hero"><div><small>PLATFORM BRAND</small><h2>平台品牌</h2><p>设置登录页与管理端展示的产品名称、标语和 Logo。</p></div></div>
+    <form className="workspace-form" onSubmit={(event) => void save(event)}>
+      <div className="workspace-form-fields">
+        <label>产品名称<input required maxLength={60} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>产品标语<input maxLength={120} value={tagline} onChange={(event) => setTagline(event.target.value)} placeholder="例如：确定性规则求值平台" /></label>
+        <label>Logo 图片地址<input type="url" value={logoURL} onChange={(event) => setLogoURL(event.target.value)} placeholder="https://example.com/logo.svg" /><small>留空时使用默认标识；仅支持公开 HTTP(S) 图片地址。</small></label>
+      </div>
+      <div className="settings-brand-preview">
+        <small>预览</small>
+        <div className="settings-brand-preview-content">
+          <span className={`settings-brand-preview-mark${logoURL.trim() ? " has-logo" : ""}`}>
+            {logoURL.trim() ? <img src={logoURL.trim()} alt={`${name || "SnakeRule"} Logo`} /> : (name.trim()[0] || "S")}
+          </span>
+          <div>
+            <b>{name || "SnakeRule"}</b>
+            <span>{tagline || "规则引擎管理控制台"}</span>
+          </div>
+        </div>
+      </div>
+      <div className="workspace-form-actions"><button className="primary" disabled={busy}>{busy ? "正在保存…" : "保存品牌配置"}</button></div>
+    </form>
+  </section>;
+}
+
+function OrganizationSettings({
   items,
-  activeWorkspaceID,
+  users,
+  activeOrganizationID,
   onRefresh,
 }: {
-  items: Workspace[];
-  activeWorkspaceID: string;
+  items: Organization[];
+  users: AdminUser[];
+  activeOrganizationID: string;
   onRefresh: () => Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
+  const [adminUserID, setAdminUserID] = useState("");
   const [editingID, setEditingID] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [confirmDeleteID, setConfirmDeleteID] = useState("");
@@ -206,22 +251,24 @@ function WorkspaceSettings({
         name: name.trim(),
         slug: slug.trim(),
         description: description.trim(),
+        admin_user_id: editingID ? undefined : adminUserID || undefined,
       };
-      if (editingID) await snakeRuleApi.updateWorkspace(editingID, input);
-      else await snakeRuleApi.createWorkspace(input);
+      if (editingID) await snakeRuleApi.updateOrganization(editingID, input);
+      else await snakeRuleApi.createOrganization(input);
       setName("");
       setSlug("");
       setDescription("");
+      setAdminUserID("");
       setEditingID("");
       await onRefresh();
       setFormOpen(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "保存工作空间失败");
+      setError(e instanceof Error ? e.message : "保存组织失败");
     } finally {
       setBusy(false);
     }
   }
-  function edit(item: Workspace) {
+  function edit(item: Organization) {
     setEditingID(item.id);
     setName(item.name);
     setSlug(item.slug ?? "");
@@ -229,15 +276,15 @@ function WorkspaceSettings({
     setError("");
     setFormOpen(true);
   }
-  async function remove(item: Workspace) {
+  async function remove(item: Organization) {
     setBusy(true);
     setError("");
     try {
-      await snakeRuleApi.deleteWorkspace(item.id);
+      await snakeRuleApi.deleteOrganization(item.id);
       setConfirmDeleteID("");
       await onRefresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "删除工作空间失败");
+      setError(e instanceof Error ? e.message : "删除组织失败");
     } finally {
       setBusy(false);
     }
@@ -246,12 +293,12 @@ function WorkspaceSettings({
     <>
       <div className="settings-hero">
         <div>
-          <small>WORKSPACE</small>
-          <h2>工作空间</h2>
+          <small>ORGANIZATION</small>
+          <h2>组织</h2>
           <p>为不同项目或团队隔离规则集，并在管理台快速切换。</p>
         </div>
       </div>
-      {formOpen && <section className="workspace-form-view"><header><div><small>WORKSPACE</small><h2>{editingID ? "编辑工作空间" : "新建工作空间"}</h2><p>{editingID ? "更新名称、slug 与说明" : "工作空间中的规则集互相隔离"}</p></div><button className="quiet" onClick={() => { setFormOpen(false); setEditingID(""); }}>← 返回列表</button></header>
+      {formOpen && <section className="workspace-form-view"><header><div><small>ORGANIZATION</small><h2>{editingID ? "编辑组织" : "新建组织"}</h2><p>{editingID ? "更新名称、slug 与说明" : "组织中的规则集互相隔离"}</p></div><button className="quiet" onClick={() => { setFormOpen(false); setEditingID(""); }}>← 返回列表</button></header>
       <form className="workspace-form" onSubmit={(event) => void save(event)}>
         <div className="workspace-form-fields">
           <label>
@@ -276,7 +323,7 @@ function WorkspaceSettings({
             />
             <small>
               {editingID === "default"
-                ? "默认空间的 slug 固定为 default"
+                ? "默认组织的 slug 固定为 default"
                 : "小写字母、数字、连字符或下划线"}
             </small>
           </label>
@@ -289,10 +336,11 @@ function WorkspaceSettings({
               placeholder="可选，简要说明用途"
             />
           </label>
+          {!editingID && <div className="workspace-admin-picker"><label>初始组织管理员</label><CustomSelect value={adminUserID} options={[{value:"",label:"暂不指定"},...users.filter((user)=>user.role!=="superadmin").map((user)=>({value:user.id,label:`${user.name} · ${user.email}`}))]} onChange={setAdminUserID} ariaLabel="初始组织管理员" /><small>可指定现有账号作为新组织管理员。</small></div>}
         </div>
         <div className="workspace-form-actions">
           <button className="primary" disabled={busy}>
-            {busy ? "正在保存…" : editingID ? "保存修改" : "创建工作空间"}
+            {busy ? "正在保存…" : editingID ? "保存修改" : "创建组织"}
           </button>
         </div>
       </form>
@@ -305,10 +353,10 @@ function WorkspaceSettings({
       {!formOpen && <section className="workspace-list-card">
         <header>
           <div>
-            <b>工作空间</b>
-            <small>{items.length} 个空间 · 默认空间不可删除</small>
+            <b>组织</b>
+            <small>{items.length} 个组织 · 默认组织不可删除</small>
           </div>
-          <button className="primary" onClick={() => { setName(""); setSlug(""); setDescription(""); setEditingID(""); setFormOpen(true); }}>＋ 新建工作空间</button>
+          <button className="primary" onClick={() => { setName(""); setSlug(""); setDescription(""); setAdminUserID(""); setEditingID(""); setFormOpen(true); }}>＋ 新建组织</button>
         </header>
         {items.map((item) => (
           <article className="workspace-row" key={item.id}>
@@ -318,19 +366,19 @@ function WorkspaceSettings({
             <div className="workspace-row-info">
               <b>
                 {item.name}
-                {item.id === activeWorkspaceID && (
+                {item.id === activeOrganizationID && (
                   <span className="workspace-current-pill">当前</span>
                 )}
               </b>
               <small>
                 {item.description ||
-                  (item.id === "default" ? "初始工作空间" : "暂无说明")}
+                  (item.id === "default" ? "初始组织" : "暂无说明")}
               </small>
               <code>{item.slug}</code>
             </div>
             {confirmDeleteID === item.id ? (
               <div className="workspace-confirm">
-                <span>删除此空间及其中的规则集？</span>
+                <span>删除此组织及其中的项目？</span>
                 <button
                   className="quiet"
                   disabled={busy}
@@ -360,14 +408,14 @@ function WorkspaceSettings({
                   disabled={
                     busy ||
                     item.id === "default" ||
-                    item.id === activeWorkspaceID
+                    item.id === activeOrganizationID
                   }
                   title={
-                    item.id === activeWorkspaceID
-                      ? "请先切换到其他工作空间"
+                    item.id === activeOrganizationID
+                      ? "请先切换到其他组织"
                       : item.id === "default"
-                        ? "默认工作空间不能删除"
-                        : "删除工作空间"
+                        ? "默认组织不能删除"
+                        : "删除组织"
                   }
                   onClick={() => setConfirmDeleteID(item.id)}
                 >
@@ -378,38 +426,20 @@ function WorkspaceSettings({
           </article>
         ))}
       </section>}
-      <p className="settings-readonly-note">
-        当前开发版的工作空间与规则集保存在内存中，服务重启后会恢复为初始空间和演示规则。
-      </p>
     </>
   );
 }
 
-type AlertChannel = {
-  id: string;
-  name: string;
-  type: "webhook" | "wecom" | "dingtalk" | "feishu" | "internal";
-  url: string;
-  enabled: boolean;
-  has_secret: boolean;
-};
+type AlertChannel = APIAlertChannel;
+type AlertChannelType = Exclude<AlertChannel["type"], "internal">;
 
-async function alertAPIJSON(response: Response): Promise<any> {
-  const raw = await response.text();
-  let body: any;
-  try { body = raw ? JSON.parse(raw) : {}; }
-  catch { throw new Error(`告警渠道接口返回非 JSON 响应（HTTP ${response.status}）：${raw.slice(0, 160)}`); }
-  if (!response.ok) throw new Error(body?.error?.message ?? `请求失败（HTTP ${response.status}）`);
-  return body;
-}
-
-function AlertChannelSettings({ onRefresh }: { onRefresh: () => Promise<void> }) {
+function AlertChannelSettings({ organizationID, onRefresh }: { organizationID: string; onRefresh: () => Promise<void> }) {
   const [items, setItems] = useState<AlertChannel[]>([]);
   const [editing, setEditing] = useState("");
   const [name, setName] = useState("");
   const [url, setURL] = useState("");
   const [secret, setSecret] = useState("");
-  const [channelType, setChannelType] = useState<AlertChannel["type"]>("webhook");
+  const [channelType, setChannelType] = useState<AlertChannelType>("webhook");
   const [enabled, setEnabled] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -417,23 +447,21 @@ function AlertChannelSettings({ onRefresh }: { onRefresh: () => Promise<void> })
   const [notice, setNotice] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const refresh = useCallback(async () => {
-    const response = await fetch("/api/v1/system/alert-channels");
-    const body = await alertAPIJSON(response);
-    setItems(body.items ?? []);
-  }, []);
+    const body = await snakeRuleApi.listOrganizationAlertChannels(organizationID);
+    setItems(body.list ?? []);
+  }, [organizationID]);
   useEffect(() => { void refresh().catch((e: Error) => setError(e.message)); }, [refresh]);
   function startEdit(item: AlertChannel) {
+    if (item.type === "internal") return;
     setEditing(item.id); setName(item.name); setURL(item.url); setSecret(""); setChannelType(item.type); setEnabled(item.enabled); setError(""); setFormOpen(true);
   }
   function reset() { setEditing(""); setName(""); setURL(""); setSecret(""); setChannelType("webhook"); setEnabled(true); setFormOpen(false); }
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError("");
     try {
-      const response = await fetch(editing ? `/api/v1/system/alert-channels/${editing}` : "/api/v1/system/alert-channels", {
-        method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type: channelType, url, secret, enabled }),
-      });
-      await alertAPIJSON(response);
+      const input = { name, type: channelType, url, secret: secret || undefined, enabled };
+      if (editing) await snakeRuleApi.updateOrganizationAlertChannel(organizationID, editing, input);
+      else await snakeRuleApi.createOrganizationAlertChannel(organizationID, input);
       reset(); await refresh(); await onRefresh();
     } catch (e) { setError(e instanceof Error ? e.message : "保存告警渠道失败"); }
     finally { setBusy(false); }
@@ -441,8 +469,7 @@ function AlertChannelSettings({ onRefresh }: { onRefresh: () => Promise<void> })
   async function remove(item: AlertChannel) {
     setBusy(true); setError("");
     try {
-      const response = await fetch(`/api/v1/system/alert-channels/${item.id}`, { method: "DELETE" });
-      if (!response.ok) await alertAPIJSON(response);
+      await snakeRuleApi.deleteOrganizationAlertChannel(organizationID, item.id);
       setConfirmDelete(""); await refresh(); await onRefresh();
     } catch (e) { setError(e instanceof Error ? e.message : "删除告警渠道失败"); }
     finally { setBusy(false); }
@@ -450,15 +477,14 @@ function AlertChannelSettings({ onRefresh }: { onRefresh: () => Promise<void> })
   async function sendTest(item: AlertChannel) {
     setBusy(true); setError(""); setNotice("");
     try {
-      const response = await fetch(`/api/v1/system/alert-channels/${item.id}/test`, { method: "POST" });
-      await alertAPIJSON(response);
+      await snakeRuleApi.testOrganizationAlertChannel(organizationID, item.id);
       setNotice(`测试通知已发送到「${item.name}」。`);
     } catch (e) { setError(e instanceof Error ? e.message : "测试通知发送失败"); }
     finally { setBusy(false); }
   }
   return <>
-    <div className="settings-hero"><div><small>SYSTEM ALERTS</small><h2>告警渠道</h2><p>在系统设置中维护可供项目告警策略引用的消息渠道。</p></div></div>
-    {formOpen && <section className="workspace-form-view"><header><div><small>SYSTEM ALERTS</small><h2>{editing ? "编辑告警渠道" : "添加告警渠道"}</h2><p>选择机器人类型并配置 Webhook 地址。</p></div><button className="quiet" onClick={reset}>← 返回列表</button></header>
+    <div className="settings-hero"><div><small>ORGANIZATION ALERTS</small><h2>告警渠道</h2><p>维护当前组织的通知渠道，供组织内项目和规则告警策略引用。</p></div></div>
+    {formOpen && <section className="workspace-form-view"><header><div><small>ORGANIZATION ALERTS</small><h2>{editing ? "编辑告警渠道" : "添加告警渠道"}</h2><p>选择机器人类型并配置 Webhook 地址。</p></div><button className="quiet" onClick={reset}>← 返回列表</button></header>
     <form className="workspace-form" onSubmit={(event) => void save(event)}>
       <div className="alert-channel-types" role="group" aria-label="告警渠道类型">
         {([["webhook", "自定义 Webhook"], ["wecom", "企业微信"], ["dingtalk", "钉钉"], ["feishu", "飞书"]] as const).map(([id, label]) => <button key={id} type="button" className={channelType === id ? "active" : ""} onClick={() => setChannelType(id)}>{label}</button>)}
@@ -476,7 +502,7 @@ function AlertChannelSettings({ onRefresh }: { onRefresh: () => Promise<void> })
     </section>}
     {error && <div className="login-error license-error" role="alert">{error}</div>}
     {notice && <div className="settings-readonly-note" role="status">{notice}</div>}
-    {!formOpen && <section className="workspace-list-card"><header><div><b>已配置渠道</b><small>{items.length} 个平台级渠道</small></div><button className="primary" onClick={() => { reset(); setFormOpen(true); }}>＋ 添加告警渠道</button></header>
+    {!formOpen && <section className="workspace-list-card"><header><div><b>已配置渠道</b><small>{items.length} 个组织渠道</small></div><button className="primary" onClick={() => { reset(); setFormOpen(true); }}>＋ 添加告警渠道</button></header>
       {items.length === 0 && <p className="settings-readonly-note">还没有配置告警渠道。添加后，项目告警策略即可选择该渠道。</p>}
       {items.map((item) => <article className="workspace-row" key={item.id}>
         <span className="workspace-avatar">{item.type === "internal" ? "◉" : "↗"}</span><div className="workspace-row-info"><b>{item.name}<span className="workspace-current-pill">{item.enabled ? "启用" : "停用"}</span></b><small>{item.type === "internal" ? "规则命中后显示在工作台通知中心" : item.url}</small><code>{{webhook:"自定义 Webhook",wecom:"企业微信",dingtalk:"钉钉",feishu:"飞书",internal:"站内通知"}[item.type]}{item.type === "internal" ? " · 系统默认" : item.has_secret ? " · 密钥已保存" : " · 无密钥"}</code></div>
@@ -487,40 +513,134 @@ function AlertChannelSettings({ onRefresh }: { onRefresh: () => Promise<void> })
   </>;
 }
 
+function UserManagement({ users, onRefresh, activeOrganizationID }: { users: AdminUser[]; onRefresh: () => Promise<void>; activeOrganizationID: string }) {
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<AdminUser | null>(null);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<"organization_admin" | "organization_member">("organization_member");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState("");
+
+  function openForm(user?: AdminUser) {
+    setEditing(user ?? null);
+    setName(user?.name ?? "");
+    setEmail(user?.email ?? "");
+    setPassword("");
+    setRole((user?.organization_roles?.[activeOrganizationID] as "organization_admin" | "organization_member") ?? (user?.role === "organization_admin" ? "organization_admin" : "organization_member"));
+    setError("");
+    setFormOpen(true);
+  }
+
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const input = { email: email.trim(), name: name.trim(), password: password || undefined, role };
+      if (editing) await snakeRuleApi.updateOrganizationUser(activeOrganizationID, editing.id, input);
+      else await snakeRuleApi.createOrganizationUser(activeOrganizationID, input);
+      setFormOpen(false);
+      toast.success(editing ? "用户资料已更新" : "用户已创建");
+      await onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "保存用户失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(userID: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await snakeRuleApi.deleteOrganizationUser(activeOrganizationID, userID);
+      setConfirmDelete("");
+      toast.success("用户已从当前组织移除");
+      await onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除用户失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (formOpen) {
+    return <section className="user-form-view">
+      <header>
+        <div><small>ORGANIZATION USERS</small><h2>{editing ? "编辑用户账号" : "添加用户账号"}</h2><p>为当前组织创建账号并设置组织管理员或成员身份。</p></div>
+        <button className="quiet" disabled={busy} onClick={() => setFormOpen(false)}>← 返回用户列表</button>
+      </header>
+      <form className="user-account-form" onSubmit={(event) => void save(event)}>
+        <label>姓名<input required maxLength={80} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>邮箱<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+        <label>组织角色<CustomSelect value={role} options={[{ value: "organization_admin", label: "组织管理员" }, { value: "organization_member", label: "组织成员" }]} onChange={(value) => setRole(value as typeof role)} ariaLabel="组织角色" /></label>
+        <label>{editing ? "重置密码（留空保持不变）" : "初始密码"}<input required={!editing} minLength={10} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="至少 10 位" /></label>
+        {error && <div className="login-error" role="alert">{error}</div>}
+        <footer><button type="button" className="quiet" disabled={busy} onClick={() => setFormOpen(false)}>返回</button><button className="primary" disabled={busy}>{busy ? "保存中…" : "保存用户"}</button></footer>
+      </form>
+    </section>;
+  }
+
+  return <>
+    <div className="settings-hero"><div><small>ORGANIZATION USERS</small><h2>用户管理</h2><p>管理当前组织的用户账号；项目内可分别授予项目管理员或项目成员角色。</p></div><button className="primary" onClick={() => openForm()}>＋ 添加用户</button></div>
+    <section className="workspace-list-card">
+      <header><div><b>当前组织账号</b><small>{users.length} 个账号</small></div></header>
+      {users.length === 0 && <div className="table-empty"><b>暂无用户</b><small>添加账号后，可以在项目的“成员”选项卡分配项目角色。</small></div>}
+      {users.map((user) => <article className="workspace-row" key={user.id}>
+        <span className="workspace-avatar">{user.name.slice(0, 1)}</span>
+        <div className="workspace-row-info"><b>{user.name}<span className="workspace-current-pill">{(user.organization_roles?.[activeOrganizationID] ?? (user.role === "organization_admin" ? "organization_admin" : "organization_member")) === "organization_admin" ? "组织管理员" : "组织成员"}</span></b><small>{user.email}</small><code>{user.organization_ids?.length ? `${user.organization_ids.length} 个组织` : "尚未分配组织"}</code></div>
+        {confirmDelete === user.id ? <div className="workspace-confirm"><span>确认删除账号？</span><button className="quiet" disabled={busy} onClick={() => setConfirmDelete("")}>取消</button><button className="workspace-confirm-delete" disabled={busy} onClick={() => void remove(user.id)}>确认删除</button></div> : <div className="workspace-row-actions"><button className="quiet" onClick={() => openForm(user)}>编辑</button>{user.role !== "superadmin" && <button className="quiet workspace-delete" onClick={() => setConfirmDelete(user.id)}>删除</button>}</div>}
+      </article>)}
+    </section>
+    {error && <div className="login-error license-error" role="alert">{error}</div>}
+  </>;
+}
+
 export function SettingsDialog({
   area,
   onClose,
-  email,
+  isSuperAdmin,
+  organizationRole,
   version,
-  workspaces,
-  activeWorkspaceID,
-  onWorkspaceRefresh,
+  platformBrand,
+  onPlatformBrandChange,
+  organizations,
+  activeOrganizationID,
+  onOrganizationRefresh,
   onAlertChannelRefresh,
 }: {
   area: "platform" | "system";
   onClose: () => void;
-  email: string;
+  isSuperAdmin: boolean;
+  organizationRole: string;
   version: string;
-  workspaces: Workspace[];
-  activeWorkspaceID: string;
-  onWorkspaceRefresh: () => Promise<void>;
+  platformBrand: PlatformSettings;
+  onPlatformBrandChange: (value: PlatformSettings) => void;
+  organizations: Organization[];
+  activeOrganizationID: string;
+  onOrganizationRefresh: () => Promise<void>;
   onAlertChannelRefresh: () => Promise<void>;
 }) {
   const platform = area === "platform";
-  const [tab, setTab] = useState(platform ? "overview" : "general");
+  const canManageOrganization = isSuperAdmin || organizationRole === "organization_admin";
+  const [tab, setTab] = useState(platform ? "system" : "general");
+  const [users,setUsers]=useState<AdminUser[]>([]);
+  const refreshUsers=useCallback(async()=>{const body=await snakeRuleApi.listOrganizationUsers(activeOrganizationID);setUsers(body.list??[])},[activeOrganizationID]);
+  useEffect(()=>{if(!platform && canManageOrganization)void refreshUsers().catch((error:Error)=>toast.error("读取用户失败",{description:error.message}))},[platform,canManageOrganization,refreshUsers]);
   const tabs = platform
-    ? [
-        { id: "overview", label: "概览", group: "平台" },
-        { id: "license", label: "系统信息", group: "平台管理" },
-        { id: "workspaces", label: "工作空间", group: "工作空间" },
-        { id: "config", label: "全局配置", group: "配置管理" },
+      ? [
+        { id: "system", label: "系统信息", group: "平台管理" },
+        { id: "organizations", label: "组织管理", group: "平台管理" },
+        { id: "brand", label: "平台品牌", group: "平台管理" },
       ]
     : [
-        { id: "general", label: "通用设置", group: "工作区" },
-        { id: "alerts", label: "告警渠道", group: "通知管理" },
-        { id: "security", label: "安全设置", group: "账号安全" },
+        { id: "general", label: "组织信息", group: "组织" },
+        ...(canManageOrganization ? [{ id: "users", label: "用户管理", group: "组织" }] : []),
+        ...(canManageOrganization ? [{ id: "alerts", label: "告警渠道", group: "组织" }] : []),
       ];
-  const host = typeof window === "undefined" ? "—" : window.location.host;
   const heading = (
     eyebrow: string,
     title: string,
@@ -563,6 +683,7 @@ export function SettingsDialog({
       </div>
     </section>
   );
+  if (platform && !isSuperAdmin) return null;
   return (
     <div
       className="settings-overlay"
@@ -575,7 +696,7 @@ export function SettingsDialog({
         className="settings-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={platform ? "平台设置" : "系统设置"}
+        aria-label={platform ? "平台设置" : "组织设置"}
       >
         <header className="settings-dialog-header">
           <div>
@@ -587,9 +708,9 @@ export function SettingsDialog({
               {platform ? "◆" : "⚙"}
             </span>
             <div>
-              <b>{platform ? "平台设置" : "系统设置"}</b>
+              <b>{platform ? "平台设置" : "组织设置"}</b>
               <small>
-                {platform ? "平台级信息与运行概况" : "当前管理端与规则引擎配置"}
+                {platform ? "平台授权、组织与品牌配置" : "当前组织的基本信息"}
               </small>
             </div>
           </div>
@@ -622,153 +743,36 @@ export function SettingsDialog({
             </div>
           </nav>
           <main className="settings-content">
-            {platform && tab === "overview" && (
+            {platform && tab === "system" && <LicenseSettings version={version} />}
+            {platform && tab === "brand" && <PlatformBrandSettings value={platformBrand} onSave={onPlatformBrandChange} />}
+            {platform && tab === "organizations" && (
               <>
-                {heading(
-                  "PLATFORM CONSOLE",
-                  "平台概览",
-                  "平台运行状态、版本信息与管理员入口。",
-                  version,
-                )}
-                <div className="settings-overview-grid">
-                  <article className="settings-overview-brand">
-                    <span className="settings-brand-mark">S</span>
-                    <div>
-                      <small>产品名称</small>
-                      <b>SnakeRule</b>
-                      <p>规则引擎管理平台</p>
-                    </div>
-                  </article>
-                  <article className="settings-overview-status">
-                    <span className="settings-status-icon">✓</span>
-                    <div>
-                      <small>服务状态</small>
-                      <b>运行正常</b>
-                      <p>
-                        <i />
-                        管理端与 API 已连接
-                      </p>
-                    </div>
-                  </article>
-                  <article className="settings-overview-edition">
-                    <small>产品版本</small>
-                    <b>社区版</b>
-                    <span>单实例管理</span>
-                  </article>
-                </div>
-                {group("平台信息", "访问入口与当前管理员", [
-                  ["访问地址", host],
-                  ["管理员账号", email],
-                  [
-                    "管理员级别",
-                    <>
-                      <i className="superadmin-dot" />
-                      超级管理员
-                    </>,
-                  ],
-                ])}
-              </>
-            )}
-            {platform && tab === "config" && (
-              <>
-                {heading(
-                  "GLOBAL CONFIGURATION",
-                  "全局配置",
-                  "当前开发版本启用的基础运行参数。",
-                  version,
-                )}
-                <div className="settings-config-grid">
-                  {group("规则服务", "规则匹配与决策执行", [
-                    ["规则存储", "进程内存"],
-                    ["条件表达式", "all / any / not"],
-                    ["求值策略", "按优先级从高到低"],
-                  ])}
-                  {group("身份验证", "控制台登录与会话", [
-                    ["登录方式", "邮箱 + 密码"],
-                    ["会话有效期", "24 小时"],
-                    ["会话存储", "服务内存，重启后失效"],
-                  ])}
-                </div>
-                <div className="settings-readonly-note">
-                  运行参数来自服务端环境配置，需在 backend/.env 中调整。
-                </div>
-              </>
-            )}
-            {platform && tab === "license" && (
-              <>
-                <LicenseSettings version={version} />
-              </>
-            )}
-            {platform && tab === "workspaces" && (
-              <>
-                <WorkspaceSettings
-                  items={workspaces}
-                  activeWorkspaceID={activeWorkspaceID}
-                  onRefresh={onWorkspaceRefresh}
+                <OrganizationSettings
+                  items={organizations}
+                  users={users}
+                  activeOrganizationID={activeOrganizationID}
+                  onRefresh={onOrganizationRefresh}
                 />
               </>
             )}
             {!platform && tab === "general" && (
               <>
                 {heading(
-                  "WORKSPACE",
-                  "通用设置",
-                  "工作空间与规则引擎的基础运行信息。",
-                  version,
+                  "ORGANIZATION SETTINGS",
+                  "组织信息",
+                  "当前组织的标识信息。平台级授权和组织管理由超级管理员在平台设置中维护。",
                 )}
                 <div className="settings-config-grid">
-                  {group("工作空间", "管理端显示与本地环境", [
-                    ["产品名称", "SnakeRule"],
-                    ["当前版本", `v${version}`],
-                    [
-                      "浏览器时区",
-                      Intl.DateTimeFormat().resolvedOptions().timeZone,
-                    ],
-                    ["界面语言", "简体中文"],
-                  ])}
-                  {group("规则引擎", "当前规则执行方式", [
-                    ["规则集存储", "进程内存"],
-                    ["默认决策模式", "同步求值"],
-                    ["模拟运行", "已启用，不写执行日志"],
+                  {group("当前组织", "由平台管理员创建和分配", [
+                    ["组织", organizations.find((organization) => organization.id === activeOrganizationID)?.name ?? "—"],
+                    ["Slug", organizations.find((organization) => organization.id === activeOrganizationID)?.slug ?? "—"],
+                    ["说明", organizations.find((organization) => organization.id === activeOrganizationID)?.description || "暂无说明"],
                   ])}
                 </div>
               </>
             )}
-            {!platform && tab === "alerts" && <AlertChannelSettings onRefresh={onAlertChannelRefresh} />}
-            {!platform && tab === "security" && (
-              <>
-                {heading(
-                  "ACCOUNT & SECURITY",
-                  "安全设置",
-                  "当前管理员身份与登录会话保护状态。",
-                  version,
-                )}
-                <div className="settings-account-banner">
-                  <span className="settings-account-avatar">
-                    {email.slice(0, 1).toUpperCase() || "A"}
-                  </span>
-                  <div>
-                    <small>当前登录账号</small>
-                    <b>{email}</b>
-                  </div>
-                  <span className="settings-role-pill">
-                    <i />
-                    超级管理员
-                  </span>
-                </div>
-                <div className="settings-config-grid">
-                  {group("身份认证", "控制台账号权限", [
-                    ["账号角色", "超级管理员"],
-                    ["身份认证", "已启用"],
-                  ])}
-                  {group("会话保护", "浏览器登录会话策略", [
-                    ["Cookie", "HttpOnly"],
-                    ["同站策略", "SameSite Lax"],
-                    ["会话时长", "24 小时"],
-                  ])}
-                </div>
-              </>
-            )}
+            {!platform && tab === "alerts" && <AlertChannelSettings organizationID={activeOrganizationID} onRefresh={onAlertChannelRefresh} />}
+            {!platform && tab === "users" && <UserManagement users={users} onRefresh={refreshUsers} activeOrganizationID={activeOrganizationID} />}
           </main>
         </div>
       </section>

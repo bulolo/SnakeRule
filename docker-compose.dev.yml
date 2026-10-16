@@ -8,6 +8,7 @@ services:
       - ./backend/.env
     environment:
       LICENSE_STORE_PATH: /data/license.json
+      DATABASE_URL: postgres://snakerule:snakerule_dev@postgres:5432/snakerule?sslmode=disable
     volumes:
       - snakerule_data:/data
     ports:
@@ -19,6 +20,9 @@ services:
       retries: 10
       start_period: 5s
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   admin:
     build:
@@ -87,7 +91,6 @@ services:
     restart: unless-stopped
 
   postgres:
-    profiles: ["infra"]
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: snakerule
@@ -102,6 +105,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   redis:
     profiles: ["infra"]

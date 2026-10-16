@@ -16,21 +16,21 @@ type RulesetRepository interface {
 	Delete(context.Context, string) error
 }
 
-// MemoryRulesetRepository is a development adapter. It is intentionally not durable.
-type MemoryRulesetRepository struct {
+// PersistentRulesetRepository keeps an in-process cache backed by the configured persistent store.
+type PersistentRulesetRepository struct {
 	mu    sync.RWMutex
 	items map[string]map[string]domain.Ruleset
 	path  string
 }
 
-func NewMemoryRulesetRepository() *MemoryRulesetRepository {
-	return &MemoryRulesetRepository{items: make(map[string]map[string]domain.Ruleset)}
+func newRulesetRepository() *PersistentRulesetRepository {
+	return &PersistentRulesetRepository{items: make(map[string]map[string]domain.Ruleset)}
 }
 
-func NewPersistentRulesetRepository(path string) (*MemoryRulesetRepository, error) {
-	r := NewMemoryRulesetRepository()
+func NewPersistentRulesetRepository(path string) (*PersistentRulesetRepository, error) {
+	r := newRulesetRepository()
 	r.path = path
-	if err := loadJSONFile(path, &r.items); err != nil {
+	if err := loadPersistent(path, &r.items); err != nil {
 		return nil, err
 	}
 	if r.items == nil {
@@ -39,18 +39,18 @@ func NewPersistentRulesetRepository(path string) (*MemoryRulesetRepository, erro
 	return r, nil
 }
 
-func (r *MemoryRulesetRepository) List(ctx context.Context) ([]domain.Ruleset, error) {
+func (r *PersistentRulesetRepository) List(ctx context.Context) ([]domain.Ruleset, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	workspaceItems := r.items[rulesetScopeID(ctx)]
-	items := make([]domain.Ruleset, 0, len(workspaceItems))
-	for _, item := range workspaceItems {
+	organizationItems := r.items[rulesetScopeID(ctx)]
+	items := make([]domain.Ruleset, 0, len(organizationItems))
+	for _, item := range organizationItems {
 		items = append(items, cloneRuleset(item))
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	return items, nil
 }
-func (r *MemoryRulesetRepository) Get(ctx context.Context, id string) (domain.Ruleset, error) {
+func (r *PersistentRulesetRepository) Get(ctx context.Context, id string) (domain.Ruleset, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	item, ok := r.items[rulesetScopeID(ctx)][id]
@@ -59,7 +59,7 @@ func (r *MemoryRulesetRepository) Get(ctx context.Context, id string) (domain.Ru
 	}
 	return cloneRuleset(item), nil
 }
-func (r *MemoryRulesetRepository) Save(ctx context.Context, item domain.Ruleset) error {
+func (r *PersistentRulesetRepository) Save(ctx context.Context, item domain.Ruleset) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	scopeID := rulesetScopeID(ctx)
@@ -67,9 +67,9 @@ func (r *MemoryRulesetRepository) Save(ctx context.Context, item domain.Ruleset)
 		r.items[scopeID] = make(map[string]domain.Ruleset)
 	}
 	r.items[scopeID][item.ID] = cloneRuleset(item)
-	return saveJSONFile(r.path, r.items)
+	return savePersistent(r.path, r.items)
 }
-func (r *MemoryRulesetRepository) Delete(ctx context.Context, id string) error {
+func (r *PersistentRulesetRepository) Delete(ctx context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	items := r.items[rulesetScopeID(ctx)]
@@ -77,18 +77,18 @@ func (r *MemoryRulesetRepository) Delete(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	delete(items, id)
-	return saveJSONFile(r.path, r.items)
+	return savePersistent(r.path, r.items)
 }
 
-func (r *MemoryRulesetRepository) DeleteProjectScope(workspaceID, projectID string) error {
+func (r *PersistentRulesetRepository) DeleteProjectScope(organizationID, projectID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	delete(r.items, workspaceID+"/"+projectID)
-	return saveJSONFile(r.path, r.items)
+	delete(r.items, organizationID+"/"+projectID)
+	return savePersistent(r.path, r.items)
 }
 
 func rulesetScopeID(ctx context.Context) string {
-	return workspaceIDFrom(ctx) + "/" + projectIDFrom(ctx)
+	return organizationIDFrom(ctx) + "/" + projectIDFrom(ctx)
 }
 
 func cloneRuleset(item domain.Ruleset) domain.Ruleset {

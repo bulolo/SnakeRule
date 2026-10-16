@@ -1,5 +1,5 @@
 {{- if ne (int .Values.backend.replicaCount) 1 -}}
-{{- fail "backend.replicaCount must remain 1 while rule and invocation repositories are in memory" -}}
+{{- fail "backend.replicaCount must remain 1 while repositories keep process-local caches" -}}
 {{- end -}}
 apiVersion: v1
 kind: Service
@@ -56,6 +56,8 @@ spec:
             - { name: AUTH_NAME, value: {{ .Values.backend.env.authName | quote }} }
             - { name: AUTH_SESSION_TTL, value: {{ .Values.backend.env.authSessionTTL | quote }} }
             - { name: LICENSE_STORE_PATH, value: {{ .Values.backend.env.licenseStorePath | quote }} }
+            - name: DATABASE_URL
+              value: {{ printf "postgres://%s:%s@%s-database:5432/%s?sslmode=disable" .Values.database.user .Values.database.password (include "snakerule.fullname" .) .Values.database.name | quote }}
             - { name: LOG_LEVEL, value: {{ .Values.backend.env.logLevel | quote }} }
             - { name: PULSE_HEARTBEAT_URL, value: {{ .Values.backend.env.pulseHeartbeatURL | quote }} }
             - { name: PULSE_HEARTBEAT_INTERVAL_SECONDS, value: {{ .Values.backend.env.pulseHeartbeatIntervalSeconds | quote }} }

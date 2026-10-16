@@ -8,17 +8,15 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/szplanner/snakerule/internal/pulseagent"
+	"github.com/szplanner/snakerule/internal/repo"
 )
 
 const productID = "snakerule"
@@ -68,29 +66,17 @@ func New(path, encryptionKey string) (*Manager, error) {
 		}
 		m.key = decoded
 	}
-	data, err := os.ReadFile(path)
-	if err == nil {
-		if err := json.Unmarshal(data, &m.state); err != nil {
-			return nil, fmt.Errorf("read license store: %w", err)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+	if err := repo.LoadPersistent(path, &m.state); err != nil {
 		return nil, err
 	}
 	if !canonicalUUIDv4.MatchString(m.state.InstallationID) {
-		if legacy, err := hex.DecodeString(m.state.InstallationID); err == nil && len(legacy) == 16 {
-			// Preserve existing installations while upgrading the old 32-hex ID format.
-			legacy[6] = legacy[6]&0x0f | 0x40
-			legacy[8] = legacy[8]&0x3f | 0x80
-			m.state.InstallationID = formatUUID(legacy)
-		} else {
-			var id [16]byte
-			if _, err := rand.Read(id[:]); err != nil {
-				return nil, err
-			}
-			id[6] = id[6]&0x0f | 0x40
-			id[8] = id[8]&0x3f | 0x80
-			m.state.InstallationID = formatUUID(id[:])
+		var id [16]byte
+		if _, err := rand.Read(id[:]); err != nil {
+			return nil, err
 		}
+		id[6] = id[6]&0x0f | 0x40
+		id[8] = id[8]&0x3f | 0x80
+		m.state.InstallationID = formatUUID(id[:])
 		if err := m.persist(m.state); err != nil {
 			return nil, err
 		}
@@ -217,18 +203,7 @@ func (m *Manager) refresh(ctx context.Context, key string) {
 }
 
 func (m *Manager) persist(state diskState) error {
-	if err := os.MkdirAll(filepath.Dir(m.path), 0o700); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := m.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, m.path)
+	return repo.SavePersistent(m.path, state)
 }
 
 func (m *Manager) encrypt(value string) (string, error) {

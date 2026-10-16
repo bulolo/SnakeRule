@@ -13,10 +13,11 @@ type AlertChannelRepository interface {
 	Get(context.Context, string) (domain.AlertChannel, error)
 	Save(context.Context, domain.AlertChannel) error
 	Delete(context.Context, string) error
+	DeleteOrganization(context.Context, string) error
 }
 
-// MemoryAlertChannelRepository is suitable for the single-process starter only.
-type MemoryAlertChannelRepository struct {
+// PersistentAlertChannelRepository keeps an in-process cache backed by the configured persistent store.
+type PersistentAlertChannelRepository struct {
 	mu    sync.RWMutex
 	items map[string]domain.AlertChannel
 	path  string
@@ -27,25 +28,28 @@ type persistedAlertChannel struct {
 	Secret  string              `json:"secret,omitempty"`
 }
 
-func NewMemoryAlertChannelRepository() *MemoryAlertChannelRepository {
-	return &MemoryAlertChannelRepository{items: make(map[string]domain.AlertChannel)}
+func newAlertChannelRepository() *PersistentAlertChannelRepository {
+	return &PersistentAlertChannelRepository{items: make(map[string]domain.AlertChannel)}
 }
 
-func NewPersistentAlertChannelRepository(path string) (*MemoryAlertChannelRepository, error) {
-	r := NewMemoryAlertChannelRepository()
+func NewPersistentAlertChannelRepository(path string) (*PersistentAlertChannelRepository, error) {
+	r := newAlertChannelRepository()
 	r.path = path
 	var stored map[string]persistedAlertChannel
-	if err := loadJSONFile(path, &stored); err != nil {
+	if err := loadPersistent(path, &stored); err != nil {
 		return nil, err
 	}
 	for id, item := range stored {
+		if item.Channel.OrganizationID == "" && id != "internal-inbox" {
+			item.Channel.OrganizationID = DefaultOrganizationID
+		}
 		item.Channel.Secret = item.Secret
 		r.items[id] = item.Channel
 	}
 	return r, nil
 }
 
-func (r *MemoryAlertChannelRepository) persist() error {
+func (r *PersistentAlertChannelRepository) persist() error {
 	stored := make(map[string]persistedAlertChannel, len(r.items))
 	for id, item := range r.items {
 		secret := item.Secret
@@ -53,14 +57,17 @@ func (r *MemoryAlertChannelRepository) persist() error {
 		item.HasSecret = secret != ""
 		stored[id] = persistedAlertChannel{Channel: item, Secret: secret}
 	}
-	return saveJSONFile(r.path, stored)
+	return savePersistent(r.path, stored)
 }
 
-func (r *MemoryAlertChannelRepository) List(context.Context) ([]domain.AlertChannel, error) {
+func (r *PersistentAlertChannelRepository) List(ctx context.Context) ([]domain.AlertChannel, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	items := make([]domain.AlertChannel, 0, len(r.items))
 	for _, item := range r.items {
+		if item.OrganizationID != "" && item.OrganizationID != OrganizationIDFrom(ctx) {
+			continue
+		}
 		item.HasSecret = item.Secret != ""
 		items = append(items, item)
 	}
@@ -68,29 +75,44 @@ func (r *MemoryAlertChannelRepository) List(context.Context) ([]domain.AlertChan
 	return items, nil
 }
 
-func (r *MemoryAlertChannelRepository) Get(_ context.Context, id string) (domain.AlertChannel, error) {
+func (r *PersistentAlertChannelRepository) Get(ctx context.Context, id string) (domain.AlertChannel, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	item, ok := r.items[id]
-	if !ok {
+	if !ok || (item.OrganizationID != "" && item.OrganizationID != OrganizationIDFrom(ctx)) {
 		return domain.AlertChannel{}, ErrNotFound
 	}
 	return item, nil
 }
 
-func (r *MemoryAlertChannelRepository) Save(_ context.Context, item domain.AlertChannel) error {
+func (r *PersistentAlertChannelRepository) Save(_ context.Context, item domain.AlertChannel) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.items[item.ID] = item
 	return r.persist()
 }
 
-func (r *MemoryAlertChannelRepository) Delete(_ context.Context, id string) error {
+func (r *PersistentAlertChannelRepository) Delete(ctx context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.items[id]; !ok {
+	item, ok := r.items[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if item.OrganizationID != "" && item.OrganizationID != OrganizationIDFrom(ctx) {
 		return ErrNotFound
 	}
 	delete(r.items, id)
+	return r.persist()
+}
+
+func (r *PersistentAlertChannelRepository) DeleteOrganization(_ context.Context, organizationID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for id, item := range r.items {
+		if item.OrganizationID == organizationID {
+			delete(r.items, id)
+		}
+	}
 	return r.persist()
 }

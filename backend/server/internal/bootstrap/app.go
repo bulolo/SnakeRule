@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/szplanner/snakerule/internal/config"
 	"github.com/szplanner/snakerule/internal/domain"
@@ -24,11 +27,15 @@ type App struct {
 	Log            *slog.Logger
 	Server         *http.Server
 	stopBackground context.CancelFunc
+	database       *sql.DB
 }
 
 func (a *App) StopBackground() {
 	if a.stopBackground != nil {
 		a.stopBackground()
+	}
+	if a.database != nil {
+		_ = a.database.Close()
 	}
 }
 
@@ -38,6 +45,23 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 	logger := newLogger(cfg.Log.Level, cfg.Log.Format)
+	db, err := sql.Open("pgx", cfg.Database.URL)
+	if err != nil {
+		return nil, fmt.Errorf("open PostgreSQL: %w", err)
+	}
+	db.SetMaxOpenConns(cfg.Database.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("connect PostgreSQL: %w", err)
+	}
+	if err := repo.OpenDatabase(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("initialize PostgreSQL storage: %w", err)
+	}
+	repo.SetDatabase(db)
 	licenseManager, err := licensing.New(cfg.License.StorePath, cfg.License.EncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("initialize license manager: %w", err)
@@ -47,9 +71,9 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load rulesets: %w", err)
 	}
-	workspaceStore, err := repo.NewPersistentWorkspaceRepository(filepath.Join(stateDir, "workspaces.json"))
+	organizationStore, err := repo.NewPersistentOrganizationRepository(filepath.Join(stateDir, "organizations.json"))
 	if err != nil {
-		return nil, fmt.Errorf("load workspaces: %w", err)
+		return nil, fmt.Errorf("load organizations: %w", err)
 	}
 	projectStore, err := repo.NewPersistentProjectRepository(filepath.Join(stateDir, "projects.json"))
 	if err != nil {
@@ -59,9 +83,20 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load project keys: %w", err)
 	}
+	userStore, err := repo.NewPersistentUserRepository(filepath.Join(stateDir, "users.json"))
+	if err != nil {
+		return nil, fmt.Errorf("load users: %w", err)
+	}
+	if err = userStore.SeedSuperAdmin(cfg.Auth.Email, cfg.Auth.Name, cfg.Auth.Password); err != nil {
+		return nil, fmt.Errorf("seed superadmin: %w", err)
+	}
 	alertChannelStore, err := repo.NewPersistentAlertChannelRepository(filepath.Join(stateDir, "alert-channels.json"))
 	if err != nil {
 		return nil, fmt.Errorf("load alert channels: %w", err)
+	}
+	platformSettingsStore, err := repo.NewPersistentPlatformSettingsRepository(filepath.Join(stateDir, "platform-settings.json"))
+	if err != nil {
+		return nil, fmt.Errorf("load platform settings: %w", err)
 	}
 	notificationStore, err := repo.NewPersistentNotificationRepository(filepath.Join(stateDir, "notifications.json"))
 	if err != nil {
@@ -70,21 +105,6 @@ func New() (*App, error) {
 	invocationLogStore, err := repo.NewPersistentInvocationLogRepository(filepath.Join(stateDir, "invocations.json"))
 	if err != nil {
 		return nil, fmt.Errorf("load invocation logs: %w", err)
-	}
-	workspaceItems, err := workspaceStore.List(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("list workspaces for project migration: %w", err)
-	}
-	for _, workspace := range workspaceItems {
-		if err := store.DeleteProjectScope(workspace.ID, "default"); err != nil {
-			return nil, fmt.Errorf("remove legacy default project rules: %w", err)
-		}
-		if err := projectKeyStore.DeleteProject(workspace.ID, "default"); err != nil {
-			return nil, fmt.Errorf("remove legacy default project credentials: %w", err)
-		}
-		if err := invocationLogStore.DeleteProject(workspace.ID, "default"); err != nil {
-			return nil, fmt.Errorf("remove legacy default project logs: %w", err)
-		}
 	}
 	jwtSigningKey, err := loadOrCreateJWTSigningKey(filepath.Join(stateDir, "jwt-signing.key"))
 	if err != nil {
@@ -95,14 +115,16 @@ func New() (*App, error) {
 			return nil, fmt.Errorf("seed internal notification channel: %w", err)
 		}
 	}
-	workspaces := service.NewWorkspaces(workspaceStore)
-	rulesets := service.NewRulesets(store)
+	organizations := service.NewOrganizationService(organizationStore)
+	rulesets := service.NewRulesetService(store)
 	engine := service.NewEngine(store)
-	handler := httpapi.New(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL, SessionStorePath: filepath.Join(stateDir, "sessions.json"), JWTSigningKey: jwtSigningKey}, licenseManager, workspaces)
+	handler := httpapi.NewServer(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL, SessionStorePath: filepath.Join(stateDir, "sessions.json"), JWTSigningKey: jwtSigningKey}, licenseManager, organizations)
 	handler.SetAlertChannelRepository(alertChannelStore)
+	handler.SetPlatformSettingsRepository(platformSettingsStore)
 	handler.SetNotificationRepository(notificationStore)
 	handler.SetInvocationLogRepository(invocationLogStore)
 	handler.SetProjectRepositories(projectStore, projectKeyStore)
+	handler.SetUserRepository(userStore)
 	server := &http.Server{Addr: ":" + cfg.Server.Port, Handler: handler.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	backgroundCtx, stopBackground := context.WithCancel(context.Background())
 	telemetry.Start(backgroundCtx, telemetry.Config{
@@ -110,8 +132,8 @@ func New() (*App, error) {
 		Endpoint:    cfg.Pulse.HeartbeatURL,
 		Interval:    time.Duration(cfg.Pulse.HeartbeatIntervalSecond) * time.Second,
 		Timeout:     time.Duration(cfg.Pulse.HeartbeatTimeoutSecond) * time.Second,
-	}, telemetry.Stores{License: licenseManager, Workspaces: workspaceStore, Projects: projectStore, Rulesets: store})
-	return &App{Config: cfg, Log: logger, Server: server, stopBackground: stopBackground}, nil
+	}, telemetry.Stores{License: licenseManager, Organizations: organizationStore, Projects: projectStore, Rulesets: store})
+	return &App{Config: cfg, Log: logger, Server: server, stopBackground: stopBackground, database: db}, nil
 }
 
 func newLogger(level, format string) *slog.Logger {

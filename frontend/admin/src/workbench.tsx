@@ -9,12 +9,15 @@ import { SettingsDialog } from "./components/settings";
 import { Toaster, toast } from "sonner";
 import { ProjectsPanel, type Project } from "./components/projects";
 import {
+  readAPIResponse,
   snakeRuleApi,
   type Condition,
   type Decision,
   type Rule,
   type Ruleset,
-  type Workspace,
+  type Organization,
+  type InvocationLog,
+  type PlatformSettings,
 } from "./lib/sdk/generated";
 
 const starter: Ruleset = {
@@ -28,12 +31,8 @@ const starter: Ruleset = {
 
 const pretty = (value: unknown) => JSON.stringify(value, null, 2);
 async function readAPIJSON(response: Response, label: string): Promise<any> {
-  const raw = await response.text();
-  let body: any;
-  try { body = raw ? JSON.parse(raw) : {}; }
-  catch { throw new Error(`${label}接口返回非 JSON 响应（HTTP ${response.status}）：${raw.slice(0, 140)}`); }
-  if (!response.ok) throw new Error(body?.error?.message ?? `${label}请求失败（HTTP ${response.status}）`);
-  return body;
+  try { return await readAPIResponse(response); }
+  catch (error) { throw new Error(`${label}失败：${error instanceof Error ? error.message : "请求失败"}`); }
 }
 export function Workbench() {
   const [selected, setSelected] = useState<Ruleset>(starter);
@@ -45,6 +44,7 @@ export function Workbench() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [version, setVersion] = useState("0.1.0");
+  const [platformBrand, setPlatformBrand] = useState<PlatformSettings>({ name: "SnakeRule", tagline: "确定性规则求值平台", logo_url: "" });
   const [busy, setBusy] = useState(false);
   const [screen, setScreen] = useState<"overview" | "design" | "projects">(() => {
     const saved = sessionStorage.getItem("snakerule:screen");
@@ -58,6 +58,7 @@ export function Workbench() {
   >("checking");
   const [email, setEmail] = useState("");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [organizationRole, setOrganizationRole] = useState("");
   const [settingsArea, setSettingsArea] = useState<
     "platform" | "system" | null
   >(null);
@@ -67,37 +68,71 @@ export function Workbench() {
   const [ruleAlertOverride, setRuleAlertOverride] = useState(false);
   const [ruleAlertEnabled, setRuleAlertEnabled] = useState(false);
   const [ruleAlertChannelIDs, setRuleAlertChannelIDs] = useState<string[]>([]);
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [activeWorkspaceID, setActiveWorkspaceID] = useState("default");
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [activeOrganizationID, setActiveOrganizationID] = useState("default");
   const [projects, setProjects] = useState<Project[]>([]);
+  const [overviewLogs, setOverviewLogs] = useState<InvocationLog[]>([]);
+  const [overviewLogsBusy, setOverviewLogsBusy] = useState(false);
+  const [globalLogsOpen, setGlobalLogsOpen] = useState(false);
+  const [globalLogPage, setGlobalLogPage] = useState(1);
+  const [globalLogSelected, setGlobalLogSelected] = useState<InvocationLog | null>(null);
+  const [globalLogTab, setGlobalLogTab] = useState<"summary" | "request" | "response">("summary");
   const [openProjectID, setOpenProjectID] = useState("");
   const [projectDetailOpen, setProjectDetailOpen] = useState(false);
   const [editorReturnScreen, setEditorReturnScreen] = useState<"projects">("projects");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const refreshWorkspaces = useCallback(async () => {
-    const result = await snakeRuleApi.listWorkspaces();
-    setWorkspaces(result.items);
-    setActiveWorkspaceID(result.active_workspace_id);
+  useEffect(() => {
+    void snakeRuleApi.getPlatformSettings().then(setPlatformBrand).catch(() => undefined);
+  }, []);
+  useEffect(() => { document.title = platformBrand.name || "SnakeRule"; }, [platformBrand.name]);
+
+  const refreshOrganizations = useCallback(async () => {
+    const result = await snakeRuleApi.listOrganizations();
+    setOrganizations(result.list);
+    setActiveOrganizationID(result.active_organization_id);
   }, []);
 
   const refreshProjects = useCallback(async () => {
-    const response = await fetch("/api/v1/projects");
+    const response = await fetch("/api/v1/projects?is_pager=0");
     const body = await readAPIJSON(response, "读取项目");
-    setProjects(body.items ?? []);
+    setProjects(body.list ?? []);
     setOpenProjectID(body.active_project_id ?? "");
   }, []);
 
+  useEffect(() => {
+    if (screen !== "overview" || !projects.length) { setOverviewLogs([]); return; }
+    let cancelled = false;
+    setOverviewLogsBusy(true);
+    Promise.all(projects.map((project) => snakeRuleApi.listProjectInvocations(project.id, { is_pager: 0 })))
+      .then((responses) => { if (!cancelled) setOverviewLogs(responses.flatMap((response) => response.list ?? [])); })
+      .catch((error: Error) => { if (!cancelled) toast.error("加载调用统计失败", { description: error.message }); })
+      .finally(() => { if (!cancelled) setOverviewLogsBusy(false); });
+    return () => { cancelled = true; };
+  }, [screen, projects]);
+
+  const overviewDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - (6 - index));
+    const next = new Date(date); next.setDate(next.getDate() + 1);
+    const dayLogs = overviewLogs.filter((item) => { const time = new Date(item.created_at); return time >= date && time < next; });
+    return { label: `${date.getMonth() + 1}/${date.getDate()}`, total: dayLogs.length, matched: dayLogs.filter((item) => item.matched).length, failed: dayLogs.filter((item) => item.status_code >= 400).length };
+  });
+  const latestOverviewLogs = [...overviewLogs].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at)).slice(0, 10);
+  const sortedOverviewLogs = [...overviewLogs].sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+  const globalLogPageSize = 20;
+  const globalLogPageCount = Math.max(1, Math.ceil(sortedOverviewLogs.length / globalLogPageSize));
+  const pagedOverviewLogs = sortedOverviewLogs.slice((globalLogPage - 1) * globalLogPageSize, globalLogPage * globalLogPageSize);
+
   const refreshAlertChannels = useCallback(async () => {
-    const response = await fetch("/api/v1/system/alert-channels");
+    const response = await fetch(`/api/v1/organizations/${encodeURIComponent(activeOrganizationID)}/alert-channels?is_pager=0`);
     const body = await readAPIJSON(response, "读取告警渠道");
-    setAlertChannels((body.items ?? []).filter((item: { enabled: boolean }) => item.enabled));
-  }, []);
+    setAlertChannels((body.list ?? []).filter((item: { enabled: boolean }) => item.enabled));
+  }, [activeOrganizationID]);
 
   const refreshNotifications = useCallback(async () => {
-    const response = await fetch("/api/v1/notifications");
+    const response = await fetch("/api/v1/notifications?is_pager=0");
     const body = await readAPIJSON(response, "读取通知");
-    setNotifications(body.items ?? []);
+    setNotifications(body.list ?? []);
   }, []);
 
   async function markNotificationsRead(id?: string) {
@@ -113,11 +148,11 @@ export function Workbench() {
         snakeRuleApi.listRulesets(),
         fetch("/api/v1/meta"),
       ]);
-      const meta = await metaResponse.json();
+      const meta = await readAPIResponse<{ version: string }>(metaResponse);
       setVersion(meta.version ?? "0.1.0");
       const item =
-        list.items.find((candidate) => candidate.id === (id ?? selected.id)) ??
-        list.items[0];
+        list.list.find((candidate) => candidate.id === (id ?? selected.id)) ??
+        list.list[0];
       if (item) {
         setSelected(item);
         setEditor(pretty(item));
@@ -140,9 +175,10 @@ export function Workbench() {
         }
         setEmail(session.user?.email ?? "");
         setIsSuperAdmin(session.user?.is_superadmin ?? false);
+        setOrganizationRole(session.user?.role ?? "");
         setAuthState("authenticated");
-        Promise.all([refresh(), refreshWorkspaces(), refreshProjects(), refreshAlertChannels(), refreshNotifications()]).catch((e: Error) =>
-          toast.error("无法连接 API", { description: e.message }),
+        Promise.all([refreshOrganizations(), refreshProjects(), refreshAlertChannels(), refreshNotifications()]).catch((e: Error) =>
+          toast.error("工作台数据加载失败", { description: e.message }),
         );
       })
       .catch(() => {
@@ -175,6 +211,7 @@ export function Workbench() {
       setAuthState("anonymous");
       setEmail("");
       setIsSuperAdmin(false);
+      setOrganizationRole("");
       setDecision(null);
       setScreen("projects");
     };
@@ -196,21 +233,22 @@ export function Workbench() {
     setEditorReturnScreen(returnScreen);
     setScreen("design");
   }
-  async function switchWorkspace(workspaceID: string) {
-    if (!workspaceID || workspaceID === activeWorkspaceID) return;
+  async function switchOrganization(organizationID: string) {
+    if (!organizationID || organizationID === activeOrganizationID) return;
     setBusy(true);
     setError("");
     try {
-      await snakeRuleApi.setActiveWorkspace(workspaceID);
-      setActiveWorkspaceID(workspaceID);
+      await snakeRuleApi.setActiveOrganization(organizationID);
+      setActiveOrganizationID(organizationID);
+      const session = await snakeRuleApi.getSession();
+      setOrganizationRole(session.user?.role ?? "");
       setOpenProjectID("");
       setScreen("projects");
       setDecision(null);
       setActiveRuleId("");
       await refreshProjects();
-      await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "切换工作空间失败");
+      setError(e instanceof Error ? e.message : "切换组织失败");
     } finally {
       setBusy(false);
     }
@@ -220,8 +258,7 @@ export function Workbench() {
     setBusy(true); setError("");
     try {
       const response = await fetch("/api/v1/projects/active", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: id }) });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body?.error?.message ?? "切换项目失败");
+      await readAPIResponse(response);
       setOpenProjectID(id); setDecision(null); setActiveRuleId(""); await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "切换项目失败"); }
     finally { setBusy(false); }
@@ -432,7 +469,7 @@ export function Workbench() {
       const value = JSON.parse(editor) as Ruleset;
       const input = JSON.parse(facts);
       const result = await snakeRuleApi.evaluate({
-        rulesetId: value.id,
+        ruleset_id: value.id,
         facts: input,
         ruleset: value,
       }, "designer");
@@ -453,6 +490,7 @@ export function Workbench() {
       setAuthState("anonymous");
       setEmail("");
       setIsSuperAdmin(false);
+      setOrganizationRole("");
       setSettingsArea(null);
       setDecision(null);
       setScreen("overview");
@@ -473,26 +511,30 @@ export function Workbench() {
   if (authState === "anonymous")
     return (
       <LoginScreen
+        brand={platformBrand}
         onSuccess={(email) => {
           setEmail(email);
-          setIsSuperAdmin(true);
+          void snakeRuleApi.getSession().then((session) => {
+            setIsSuperAdmin(session.user?.is_superadmin ?? false);
+            setOrganizationRole(session.user?.role ?? "");
+          });
           setAuthState("authenticated");
-          Promise.all([refresh(), refreshWorkspaces(), refreshProjects()]).catch((e: Error) =>
-            setError(`无法连接 API：${e.message}`),
+          Promise.all([refreshOrganizations(), refreshProjects()]).catch((e: Error) =>
+            setError(`工作台数据加载失败：${e.message}`),
           );
         }}
       />
     );
+
+  const currentRoleLabel = isSuperAdmin ? "超级管理员" : organizationRole === "organization_admin" ? "组织管理员" : "组织成员";
 
   return (
     <div className={`shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-brand-row">
           <a className="brand" href="/">
-            <span className="brand-icon">S</span>
-            <span>
-              SnakeRule<small>RULE ENGINE</small>
-            </span>
+            <span className={`brand-icon${platformBrand.logo_url ? " has-logo" : ""}`}>{platformBrand.logo_url ? <img src={platformBrand.logo_url} alt="" /> : platformBrand.name.slice(0, 1)}</span>
+            <span>{platformBrand.name}<small>{platformBrand.tagline || "RULE ENGINE"}</small></span>
           </a>
         </div>
         <button
@@ -536,14 +578,14 @@ export function Workbench() {
         <header className="topbar">
           <div className="topbar-context">
             <CustomSelect
-              ariaLabel="切换工作空间"
-              value={activeWorkspaceID}
-              disabled={busy || !workspaces.length}
-              options={workspaces.map((workspace) => ({
-                value: workspace.id,
-                label: workspace.name,
+              ariaLabel="切换组织"
+              value={activeOrganizationID}
+              disabled={busy || !organizations.length}
+              options={organizations.map((organization) => ({
+                value: organization.id,
+                label: organization.name,
               }))}
-              onChange={(value) => void switchWorkspace(value)}
+              onChange={(value) => void switchOrganization(value)}
             />
             <span>{screen === "overview" ? "概览" : screen === "projects" ? "项目" : selected.name}</span>
           </div>
@@ -560,7 +602,7 @@ export function Workbench() {
               className="settings-entry"
               onClick={() => setSettingsArea("system")}
             >
-              ⚙ 系统设置
+              ⚙ 组织设置
             </button>
             <details className="notification-menu">
               <summary aria-label="站内通知" title="站内通知"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 8a5.5 5.5 0 0 0-11 0c0 6-2 6-2 7.5h15C17.5 14 15.5 14 15.5 8ZM8 18h4"/></svg>{notifications.some((item) => !item.read) && <i>{notifications.filter((item) => !item.read).length}</i>}</summary>
@@ -569,13 +611,13 @@ export function Workbench() {
               </section>
             </details>
             <details className="user-menu">
-              <summary className="topbar-user" title={`${email} · 超级管理员`}>
+              <summary className="topbar-user" title={`${email} · ${currentRoleLabel}`}>
                 <span className="avatar">
                   {email.slice(0, 2).toUpperCase() || "SR"}
                 </span>
                 <span>
                   <b>{email}</b>
-                  <small>超级管理员</small>
+                  <small>{currentRoleLabel}</small>
                 </span>
                 <i>⌄</i>
               </summary>
@@ -585,7 +627,7 @@ export function Workbench() {
                     {email.slice(0, 2).toUpperCase() || "SR"}
                   </span>
                   <div>
-                    <b>超级管理员</b>
+                    <b>{currentRoleLabel}</b>
                     <small>{email}</small>
                   </div>
                 </div>
@@ -605,54 +647,47 @@ export function Workbench() {
             <>
               <section className="title-row">
                 <div>
-                  <small className="eyebrow">WORKSPACE OVERVIEW</small>
+                  <small className="eyebrow">ORGANIZATION OVERVIEW</small>
                   <h1>概览</h1>
-                  <p>查看当前工作空间的项目，并快速进入项目管理规则。</p>
+                  <p>查看规则调用趋势、命中情况与最近的求值记录。</p>
                 </div>
-                <button className="primary create-button" onClick={() => setScreen("projects")}>
-                  管理项目
-                </button>
               </section>
               <section className="metrics list-metrics">
                 <div>
-                  <small>当前工作空间</small>
-                  <b>
-                    {workspaces.find(
-                      (workspace) => workspace.id === activeWorkspaceID,
-                    )?.name ?? "默认工作空间"}
-                  </b>
-                  <em>
-                    Slug ·{" "}
-                    {workspaces.find(
-                      (workspace) => workspace.id === activeWorkspaceID,
-                    )?.slug ?? "default"}
-                  </em>
+                  <small>近 7 天调用</small>
+                  <b>{overviewDays.reduce((sum, day) => sum + day.total, 0)}</b>
+                  <em>全部求值来源</em>
                 </div>
                 <div>
-                  <small>项目</small>
-                  <b>{projects.length}</b>
-                  <em>当前工作空间</em>
+                  <small>规则命中</small>
+                  <b>{overviewDays.reduce((sum, day) => sum + day.matched, 0)}</b>
+                  <em>近 7 天</em>
                 </div>
                 <div>
-                  <small>平台版本</small>
-                  <b>v{version}</b>
-                  <em>SnakeRule</em>
+                  <small>请求失败</small>
+                  <b>{overviewDays.reduce((sum, day) => sum + day.failed, 0)}</b>
+                  <em>HTTP 4xx / 5xx</em>
                 </div>
               </section>
-              <section className="list-panel">
-                <div className="list-toolbar">
-                  <div>
-                    <b>项目</b>
-                    <small>共 {projects.length} 个</small>
-                  </div>
-                </div>
-                <div className="overview-project-list">{projects.map((project) => <button key={project.id} className="overview-project-row" onClick={() => { void switchProject(project.id).then(() => { setProjectDetailOpen(true); setScreen("projects"); }); }}><span className="project-mark">{project.name.slice(0, 1)}</span><span><b>{project.name}</b><small>{project.slug} · {project.description || "暂无说明"}</small></span><strong>进入　→</strong></button>)}{!projects.length && <div className="table-empty"><b>此工作空间还没有项目</b><small>创建项目后，可以在项目内管理规则集、鉴权和告警。</small><button className="secondary" onClick={() => setScreen("projects")}>创建项目</button></div>}</div>
+              <div className="overview-main-grid"><section className="overview-call-chart">
+                <header><div><small className="eyebrow">RULE EVALUATIONS</small><h2>调用情况</h2><p>当前组织近 7 天的求值记录，包含模拟与真实调用</p></div><span>{overviewLogsBusy ? "统计中…" : `累计 ${overviewDays.reduce((sum, day) => sum + day.total, 0)} 次`}</span></header>
+                <div className="overview-chart-legend"><span><i className="total" />调用次数</span><span><i className="matched" />规则命中</span><span><i className="failed" />请求失败</span></div>
+                <div className="overview-chart-bars">{overviewDays.map((day) => {
+                  const max = Math.max(1, ...overviewDays.map((item) => item.total));
+                  return <div className="overview-chart-day" key={day.label}><div className="overview-chart-columns" title={`${day.total} 次调用 · 命中 ${day.matched} · 失败 ${day.failed}`}><i className="total" style={{ height: `${Math.max(day.total ? 5 : 0, day.total / max * 100)}%` }} /><i className="matched" style={{ height: `${Math.max(day.matched ? 5 : 0, day.matched / max * 100)}%` }} /><i className="failed" style={{ height: `${Math.max(day.failed ? 5 : 0, day.failed / max * 100)}%` }} /></div><small>{day.label}</small><b>{day.total}</b></div>;
+                })}</div>
+                {!overviewLogsBusy && overviewDays.every((day) => day.total === 0) && <div className="overview-chart-empty">近 7 天还没有求值记录。</div>}
               </section>
+              <section className="overview-global-logs">
+                <header><div><small className="eyebrow">INVOCATION LOGS</small><h2>调用日志</h2><p>当前组织各项目最近的求值记录</p></div><button className="overview-log-more" aria-label="查看全部调用日志" title="查看全部调用日志" onClick={() => { setGlobalLogPage(1); setGlobalLogSelected(null); setGlobalLogsOpen(true); }}><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.4"/><circle cx="10" cy="10" r="1.4"/><circle cx="16" cy="10" r="1.4"/></svg></button></header>
+                {latestOverviewLogs.length ? <div className="overview-global-log-list">{latestOverviewLogs.slice(0, 8).map((log) => <article key={log.id}><div className="overview-global-log-top"><div className="overview-log-result"><i className={log.status_code >= 400 ? "failed" : log.matched ? "matched" : "ok"} /><span>{log.status_code >= 400 ? "失败" : log.matched ? `命中 ${log.hit_rules?.length ?? 0} 条` : "成功 · 未命中"}</span></div><time>{new Date(log.created_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time></div><b>{projects.find((project) => project.id === log.project_id)?.name ?? log.project_id}</b><small>{log.ruleset_id || "未记录规则集"} · {log.source === "designer_simulation" ? "设计器模拟" : log.source === "project_api" ? "真实 API" : "管理端调用"} · {log.duration_ms < 1 ? "<1" : log.duration_ms} ms</small></article>)}</div> : <div className="overview-chart-empty">暂无调用记录</div>}
+              </section></div>
+              {globalLogsOpen && <div className="overview-logs-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setGlobalLogsOpen(false); }}><section className="overview-logs-dialog" role="dialog" aria-modal="true" aria-labelledby="overview-logs-title"><header><div><small className="eyebrow">INVOCATION LOGS</small><h2 id="overview-logs-title">调用日志</h2><p>当前组织 · 共 {sortedOverviewLogs.length} 条记录</p></div><button className="quiet" onClick={() => setGlobalLogsOpen(false)} aria-label="关闭">×</button></header><div className="overview-logs-table-wrap"><table><thead><tr><th>时间</th><th>结果</th><th>项目 / 规则集</th><th>来源</th><th>状态</th><th>耗时</th></tr></thead><tbody>{pagedOverviewLogs.map((log) => <tr key={log.id} className={globalLogSelected?.id === log.id ? "selected" : ""} onClick={() => { setGlobalLogSelected(log); setGlobalLogTab("summary"); }}><td>{new Date(log.created_at).toLocaleString("zh-CN")}</td><td>{log.status_code >= 400 ? "失败" : log.matched ? `命中 ${log.hit_rules?.length ?? 0} 条` : "成功，未命中"}</td><td><b>{projects.find((project) => project.id === log.project_id)?.name ?? log.project_id}</b><small>{log.ruleset_id || "—"}</small></td><td>{log.source === "designer_simulation" ? "设计器模拟" : log.source === "project_api" ? "真实 API" : "管理端调用"}</td><td>{log.status_code}</td><td>{log.duration_ms < 1 ? "<1" : log.duration_ms} ms</td></tr>)}</tbody></table>{!pagedOverviewLogs.length && <div className="overview-chart-empty">暂无调用记录</div>}</div>{globalLogSelected && <section className="overview-log-detail"><header><div><b>{globalLogSelected.status_code >= 400 ? "调用失败" : globalLogSelected.matched ? `命中 ${globalLogSelected.hit_rules?.length ?? 0} 条规则` : "成功，未命中规则"}</b><small>{globalLogSelected.method || "POST"} {globalLogSelected.path || "/api/v1/engine/evaluate"} · {projects.find((project) => project.id === globalLogSelected.project_id)?.name ?? globalLogSelected.project_id}</small></div><nav><button className={globalLogTab === "summary" ? "active" : ""} onClick={() => setGlobalLogTab("summary")}>概览</button><button className={globalLogTab === "request" ? "active" : ""} onClick={() => setGlobalLogTab("request")}>请求</button><button className={globalLogTab === "response" ? "active" : ""} onClick={() => setGlobalLogTab("response")}>响应</button></nav></header>{globalLogTab === "summary" ? <div className="overview-log-summary"><span>来源：{globalLogSelected.source === "designer_simulation" ? "设计器模拟" : globalLogSelected.source === "project_api" ? "真实 API" : "管理端调用"}</span><span>凭据：{globalLogSelected.credential_type || "管理端会话"}</span><span>HTTP：{globalLogSelected.status_code}</span><span>耗时：{globalLogSelected.duration_ms < 1 ? "<1" : globalLogSelected.duration_ms} ms</span><span>时间：{new Date(globalLogSelected.created_at).toLocaleString("zh-CN")}</span></div> : <pre>{globalLogTab === "request" ? globalLogSelected.request_body || "此记录没有保存请求体。" : globalLogSelected.response_body || "此记录没有保存响应体。"}</pre>}</section>}<footer><span>每页 20 条 · 日志保留上限由服务端配置</span><div><button className="quiet" disabled={globalLogPage <= 1} onClick={() => { setGlobalLogPage((page) => Math.max(1, page - 1)); setGlobalLogSelected(null); }}>上一页</button><span>{globalLogPage} / {globalLogPageCount}</span><button className="quiet" disabled={globalLogPage >= globalLogPageCount} onClick={() => { setGlobalLogPage((page) => Math.min(globalLogPageCount, page + 1)); setGlobalLogSelected(null); }}>下一页</button></div></footer></section></div>}
             </>
           ) : screen === "projects" ? (
-            <ProjectsPanel projects={projects} projectID={openProjectID} activeWorkspaceID={activeWorkspaceID} alertChannels={alertChannels} projectDetailOpen={projectDetailOpen} setProjectDetailOpen={setProjectDetailOpen} onRefresh={refreshProjects} onSelect={switchProject} onCreateRuleset={create} onDeleteRuleset={removeRuleset} onOpenRuleset={(ruleset) => open(ruleset, "projects")} />
+            <ProjectsPanel projects={projects} projectID={openProjectID} activeOrganizationID={activeOrganizationID} alertChannels={alertChannels} projectDetailOpen={projectDetailOpen} setProjectDetailOpen={setProjectDetailOpen} onRefresh={refreshProjects} onSelect={switchProject} onCreateRuleset={create} onDeleteRuleset={removeRuleset} onOpenRuleset={(ruleset) => open(ruleset, "projects")} />
           ) : (
-            <div className="designer-modal-overlay">
+            <div className="designer-modal-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setScreen(editorReturnScreen); }}>
               <div className="designer-modal" role="dialog" aria-modal="true" aria-label={`规则设计器：${selected.name || "未命名规则集"}`}>
               <div className="designer-modal-heading">
                 <div className="crumb-row">
@@ -1148,7 +1183,7 @@ export function Workbench() {
                     {decision && (
                       <span className={decision.matched ? "tag-on" : "tag-off"}>
                         {decision.matched
-                          ? `命中 ${decision.hitRules.length} 条`
+                          ? `命中 ${decision.hit_rules.length} 条`
                           : "无规则命中"}
                       </span>
                     )}
@@ -1170,10 +1205,10 @@ export function Workbench() {
               {error}
             </div>
           )}
-          <footer>SnakeRule　·　确定性规则求值　·　v{version}</footer>
+          <footer>{platformBrand.name}　·　{platformBrand.tagline}　·　v{version}</footer>
         </div>
       </main>
-      {ruleAlertModalOpen && activeRule && <div className="project-modal-overlay" role="presentation"><section className="project-modal project-config-modal" role="dialog" aria-modal="true" aria-labelledby="rule-alert-title">
+      {ruleAlertModalOpen && activeRule && <div className="project-modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRuleAlertModalOpen(false); }}><section className="project-modal project-config-modal" role="dialog" aria-modal="true" aria-labelledby="rule-alert-title">
         <header><div><small>RULE NOTIFICATION</small><h2 id="rule-alert-title">命中通知</h2><p>「{activeRule.name}」默认继承规则集设置，也可以单独覆盖。</p></div><button className="quiet" onClick={() => setRuleAlertModalOpen(false)} aria-label="关闭">×</button></header>
         <div className="rule-alert-mode">
           <label><input type="radio" name="rule-alert-mode" checked={!ruleAlertOverride} onChange={() => setRuleAlertOverride(false)} /><span><b>继承规则集默认</b><small>{selected.alert?.enabled ? `已启用 · ${selected.alert.channel_ids.map((id) => alertChannels.find((channel) => channel.id === id)?.name ?? id).join("、")}` : "当前规则集未设置默认通知"}</small></span></label>
@@ -1181,18 +1216,21 @@ export function Workbench() {
         </div>
         {ruleAlertOverride && <>
           <label className="project-toggle"><input type="checkbox" checked={ruleAlertEnabled} onChange={(event) => setRuleAlertEnabled(event.target.checked)} /><span><b>启用此规则的告警</b><small>关闭后，此规则不会触发通知</small></span></label>
-          {ruleAlertEnabled && <div className="project-check-group"><b>通知渠道</b>{alertChannels.length ? alertChannels.map((channel) => <label key={channel.id}><input type="checkbox" checked={ruleAlertChannelIDs.includes(channel.id)} onChange={() => setRuleAlertChannelIDs((items) => items.includes(channel.id) ? items.filter((id) => id !== channel.id) : [...items, channel.id])} /><span>{channel.name}<small>{channel.type}</small></span></label>) : <small>暂无可用渠道，请先在「系统设置 → 告警渠道」添加并启用。</small>}</div>}
+          {ruleAlertEnabled && <div className="project-check-group"><b>通知渠道</b>{alertChannels.length ? alertChannels.map((channel) => <label key={channel.id}><input type="checkbox" checked={ruleAlertChannelIDs.includes(channel.id)} onChange={() => setRuleAlertChannelIDs((items) => items.includes(channel.id) ? items.filter((id) => id !== channel.id) : [...items, channel.id])} /><span>{channel.name}<small>{channel.type}</small></span></label>) : <small>暂无可用渠道，请先在「组织设置 → 告警渠道」添加并启用。</small>}</div>}
         </>}
         <footer><button className="quiet" onClick={() => setRuleAlertModalOpen(false)}>取消</button><button className="primary" disabled={ruleAlertOverride && ruleAlertEnabled && ruleAlertChannelIDs.length === 0} onClick={saveRuleAlertConfig}>应用设置</button></footer>
       </section></div>}
       {settingsArea && (
         <SettingsDialog
           area={settingsArea}
-          email={email}
+          isSuperAdmin={isSuperAdmin}
+          organizationRole={organizationRole}
           version={version}
-          workspaces={workspaces}
-          activeWorkspaceID={activeWorkspaceID}
-          onWorkspaceRefresh={refreshWorkspaces}
+          platformBrand={platformBrand}
+          onPlatformBrandChange={setPlatformBrand}
+          organizations={organizations}
+          activeOrganizationID={activeOrganizationID}
+          onOrganizationRefresh={refreshOrganizations}
           onAlertChannelRefresh={refreshAlertChannels}
           onClose={() => setSettingsArea(null)}
         />

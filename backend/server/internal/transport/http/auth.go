@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -10,8 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -60,54 +60,69 @@ type sessionStore struct {
 }
 
 type session struct {
-	ExpiresAt   time.Time `json:"expires_at"`
-	WorkspaceID string    `json:"workspace_id"`
-	ProjectID   string    `json:"project_id"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	OrganizationID  string    `json:"organization_id"`
+	ProjectID       string    `json:"project_id"`
+	Email           string    `json:"email"`
+	Name            string    `json:"name"`
+	Role            string    `json:"role"`
+	OrganizationIDs []string  `json:"organization_ids,omitempty"`
 }
 
 func newSessionStore(ttl time.Duration, path string) *sessionStore {
 	s := &sessionStore{sessions: make(map[string]session), ttl: ttl, path: path}
-	if data, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(data, &s.sessions)
-	}
-	legacyProject := false
-	for token, current := range s.sessions {
-		if current.ProjectID == "default" {
-			current.ProjectID = ""
-			s.sessions[token] = current
-			legacyProject = true
-		}
-	}
-	if legacyProject {
-		_ = s.persist()
-	}
+	_ = repo.LoadPersistent(path, &s.sessions)
 	return s
 }
 
 func (s *sessionStore) persist() error {
-	if s.path == "" {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0700); err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(s.sessions, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(s.path+".tmp", b, 0600); err != nil {
-		return err
-	}
-	return os.Rename(s.path+".tmp", s.path)
+	return repo.SavePersistent(s.path, s.sessions)
 }
 
 type projectJWTClaims struct {
-	Issuer    string `json:"iss"`
-	Subject   string `json:"sub"`
-	Workspace string `json:"workspace"`
-	Project   string `json:"project"`
-	IssuedAt  int64  `json:"iat"`
-	ExpiresAt int64  `json:"exp"`
+	Issuer       string `json:"iss"`
+	Subject      string `json:"sub"`
+	Organization string `json:"organization"`
+	Project      string `json:"project"`
+	IssuedAt     int64  `json:"iat"`
+	ExpiresAt    int64  `json:"exp"`
+}
+
+func encryptProjectSigningSecret(master []byte, secret string) (string, error) {
+	block, err := aes.NewCipher(master[:32])
+	if err != nil {
+		return "", err
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err = rand.Read(nonce); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(append(nonce, aead.Seal(nil, nonce, []byte(secret), nil)...)), nil
+}
+
+func decryptProjectSigningSecret(master []byte, encoded string) (string, error) {
+	block, err := aes.NewCipher(master[:32])
+	if err != nil {
+		return "", err
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	data, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil || len(data) < aead.NonceSize() {
+		return "", errors.New("invalid signing key")
+	}
+	nonce, ciphertext := data[:aead.NonceSize()], data[aead.NonceSize():]
+	plain, err := aead.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(plain), nil
 }
 
 func (s *Server) authenticateProjectJWT(token string) (domain.APIKeyCredential, error) {
@@ -121,11 +136,30 @@ func (s *Server) authenticateProjectJWT(token string) (domain.APIKeyCredential, 
 	}
 	var header struct {
 		Algorithm string `json:"alg"`
+		KeyID     string `json:"kid"`
 	}
 	if json.Unmarshal(headerBytes, &header) != nil || header.Algorithm != "HS256" {
 		return domain.APIKeyCredential{}, errors.New("invalid bearer token algorithm")
 	}
-	mac := hmac.New(sha256.New, s.jwtSigningKey)
+	var credential domain.APIKeyCredential
+	var signingKey []byte
+	if header.KeyID != "" {
+		credential, err = s.projectKeys.FindByID(context.Background(), header.KeyID)
+		if err != nil || credential.Type != "jwt" || credential.CredentialKind != "signing_key" {
+			return domain.APIKeyCredential{}, errors.New("invalid signing key")
+		}
+		if credential.ExpiresAt != nil && !credential.ExpiresAt.After(time.Now()) {
+			return domain.APIKeyCredential{}, errors.New("expired signing key")
+		}
+		secret, decryptErr := decryptProjectSigningSecret(s.jwtSigningKey, credential.SigningSecretEncrypted)
+		if decryptErr != nil {
+			return domain.APIKeyCredential{}, errors.New("invalid signing key")
+		}
+		signingKey = []byte(secret)
+	} else {
+		signingKey = s.jwtSigningKey
+	}
+	mac := hmac.New(sha256.New, signingKey)
 	_, _ = mac.Write([]byte(parts[0] + "." + parts[1]))
 	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil || !hmac.Equal(signature, mac.Sum(nil)) {
@@ -136,12 +170,18 @@ func (s *Server) authenticateProjectJWT(token string) (domain.APIKeyCredential, 
 		return domain.APIKeyCredential{}, errors.New("invalid bearer token claims")
 	}
 	var claims projectJWTClaims
-	if json.Unmarshal(claimsBytes, &claims) != nil || claims.Issuer != "snakerule" || claims.Subject == "" || claims.Workspace == "" || claims.Project == "" || claims.ExpiresAt <= time.Now().Unix() || claims.IssuedAt > time.Now().Add(time.Minute).Unix() {
+	if json.Unmarshal(claimsBytes, &claims) != nil || claims.ExpiresAt <= time.Now().Unix() || claims.IssuedAt > time.Now().Add(time.Minute).Unix() {
+		return domain.APIKeyCredential{}, errors.New("expired or invalid bearer token")
+	}
+	if header.KeyID != "" {
+		return credential, nil
+	}
+	if claims.Issuer != "snakerule" || claims.Subject == "" || claims.Organization == "" || claims.Project == "" {
 		return domain.APIKeyCredential{}, errors.New("expired or invalid bearer token")
 	}
 	digest := sha256.Sum256([]byte(token))
-	credential, err := s.projectKeys.FindByHash(context.Background(), base64.RawURLEncoding.EncodeToString(digest[:]))
-	if err != nil || credential.Type != "jwt" || credential.ID != claims.Subject || credential.Workspace != claims.Workspace || credential.Project != claims.Project {
+	credential, err = s.projectKeys.FindByHash(context.Background(), base64.RawURLEncoding.EncodeToString(digest[:]))
+	if err != nil || credential.Type != "jwt" || credential.ID != claims.Subject || credential.Organization != claims.Organization || credential.Project != claims.Project {
 		return domain.APIKeyCredential{}, errors.New("revoked or invalid bearer token")
 	}
 	return credential, nil
@@ -156,10 +196,25 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	userOK := subtle.ConstantTimeCompare([]byte(strings.TrimSpace(input.Email)), []byte(s.auth.Email))
-	passOK := subtle.ConstantTimeCompare([]byte(input.Password), []byte(s.auth.Password))
-	if userOK != 1 || passOK != 1 {
+	user := domain.User{Email: s.auth.Email, Name: s.auth.Name, Role: "superadmin", OrganizationIDs: []string{repo.DefaultOrganizationID}}
+	valid := false
+	if s.users != nil {
+		if found, ok := s.users.Verify(input.Email, input.Password); ok {
+			user = found
+			valid = true
+		}
+	} else {
+		valid = subtle.ConstantTimeCompare([]byte(strings.ToLower(strings.TrimSpace(input.Email))), []byte(strings.ToLower(s.auth.Email))) == 1 && subtle.ConstantTimeCompare([]byte(input.Password), []byte(s.auth.Password)) == 1
+	}
+	if !valid {
 		writeError(w, http.StatusUnauthorized, errors.New("邮箱或密码错误"))
+		return
+	}
+	organizationID := repo.DefaultOrganizationID
+	if len(user.OrganizationIDs) > 0 {
+		organizationID = user.OrganizationIDs[0]
+	} else if user.Role != "superadmin" {
+		writeError(w, http.StatusForbidden, errors.New("账号尚未分配组织，请联系超级管理员"))
 		return
 	}
 
@@ -177,7 +232,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 			delete(s.sessions.sessions, existingToken)
 		}
 	}
-	s.sessions.sessions[token] = session{ExpiresAt: expires, WorkspaceID: repo.DefaultWorkspaceID}
+	s.sessions.sessions[token] = session{ExpiresAt: expires, OrganizationID: organizationID, Email: user.Email, Name: user.Name, Role: user.Role, OrganizationIDs: user.OrganizationIDs}
 	if err := s.sessions.persist(); err != nil {
 		s.sessions.mu.Unlock()
 		writeError(w, http.StatusInternalServerError, errors.New("unable to persist session"))
@@ -189,19 +244,152 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		Secure:   r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
 		SameSite: http.SameSiteLaxMode, Expires: expires, MaxAge: int(s.sessions.ttl.Seconds()),
 	})
-	writeJSON(w, http.StatusOK, s.sessionResponse())
+	writeJSON(w, http.StatusOK, s.sessionResponse(r))
 }
 
 func (s *Server) currentSession(w http.ResponseWriter, r *http.Request) {
-	if !s.validSession(r) {
+	if !s.authenticatedSession(r) {
 		writeJSON(w, http.StatusOK, map[string]any{"authenticated": false})
 		return
 	}
-	writeJSON(w, http.StatusOK, s.sessionResponse())
+	writeJSON(w, http.StatusOK, s.sessionResponse(r))
 }
 
-func (s *Server) sessionResponse() map[string]any {
-	return map[string]any{"authenticated": true, "user": map[string]any{"email": s.auth.Email, "name": s.auth.Name, "is_superadmin": true}}
+func (s *Server) sessionResponse(r *http.Request) map[string]any {
+	current := s.sessionFromRequest(r)
+	role := current.Role
+	if s.users != nil {
+		if user, ok := s.users.FindByEmail(current.Email); ok && user.OrganizationRoles[current.OrganizationID] != "" {
+			role = user.OrganizationRoles[current.OrganizationID]
+		}
+	}
+	return map[string]any{"authenticated": true, "user": map[string]any{"email": current.Email, "name": current.Name, "role": role, "is_superadmin": current.Role == "superadmin"}}
+}
+
+func (s *Server) sessionFromRequest(r *http.Request) session {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return session{}
+	}
+	s.sessions.mu.Lock()
+	defer s.sessions.mu.Unlock()
+	current := s.sessions.sessions[cookie.Value]
+	if current.Role == "" && (current.Email == "" || strings.EqualFold(current.Email, s.auth.Email)) {
+		current.Role = "superadmin"
+		current.Email = s.auth.Email
+		current.Name = s.auth.Name
+	}
+	if s.users != nil && current.Email != "" {
+		if user, ok := s.users.FindByEmail(current.Email); ok {
+			current.Role = user.Role
+			current.Name = user.Name
+			current.OrganizationIDs = user.OrganizationIDs
+		}
+	}
+	return current
+}
+func (s *Server) isSuperAdmin(r *http.Request) bool {
+	current := s.sessionFromRequest(r)
+	return current.Role == "superadmin"
+}
+func (s *Server) canAccessOrganization(r *http.Request, organizationID string) bool {
+	if s.isSuperAdmin(r) {
+		return true
+	}
+	for _, id := range s.sessionFromRequest(r).OrganizationIDs {
+		if id == organizationID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) canManageOrganization(r *http.Request, organizationID string) bool {
+	current := s.sessionFromRequest(r)
+	if current.Role == "superadmin" {
+		return true
+	}
+	if s.users != nil {
+		if user, ok := s.users.FindByEmail(current.Email); ok {
+			if user.OrganizationRoles[organizationID] == "organization_admin" {
+				return true
+			}
+		}
+	}
+	return current.Role == "organization_admin" && containsString(current.OrganizationIDs, organizationID)
+}
+
+func (s *Server) projectRole(r *http.Request, projectID string) string {
+	current := s.sessionFromRequest(r)
+	if current.Role == "superadmin" {
+		return "superadmin"
+	}
+	if s.users != nil {
+		if user, ok := s.users.FindByEmail(current.Email); ok {
+			if user.OrganizationRoles[repo.OrganizationIDFrom(r.Context())] == "organization_admin" || user.Role == "organization_admin" {
+				return "organization_admin"
+			}
+			return user.ProjectRoles[projectID]
+		}
+	}
+	if current.Role == "organization_admin" {
+		return "organization_admin"
+	}
+	return ""
+}
+
+func (s *Server) canAccessProject(r *http.Request, projectID string) bool {
+	role := s.projectRole(r, projectID)
+	return role == "superadmin" || role == "organization_admin" || role == "project_admin" || role == "project_member"
+}
+
+func (s *Server) canManageProject(r *http.Request, projectID string) bool {
+	role := s.projectRole(r, projectID)
+	return role == "superadmin" || role == "organization_admin" || role == "project_admin"
+}
+
+func (s *Server) requireProjectPathAccess(next http.Handler, manage bool) http.Handler {
+	return s.requireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		projectID := r.PathValue("id")
+		if _, err := s.projects.Get(r.Context(), projectID); err != nil {
+			s.writeServiceError(w, err)
+			return
+		}
+		allowed := s.canAccessProject(r, projectID)
+		if manage {
+			allowed = s.canManageProject(r, projectID)
+		}
+		if !allowed {
+			writeError(w, http.StatusForbidden, errors.New("没有访问该项目的权限"))
+			return
+		}
+		ctx := repo.WithProject(r.Context(), projectID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}))
+}
+
+func (s *Server) requireCurrentProjectAccess(next http.Handler, manage bool) http.Handler {
+	return s.requireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		projectID := s.sessions.projectID(r)
+		if projectID == "" {
+			writeError(w, http.StatusBadRequest, errors.New("请先选择项目"))
+			return
+		}
+		if _, err := s.projects.Get(r.Context(), projectID); err != nil {
+			s.writeServiceError(w, err)
+			return
+		}
+		allowed := s.canAccessProject(r, projectID)
+		if manage {
+			allowed = s.canManageProject(r, projectID)
+		}
+		if !allowed {
+			writeError(w, http.StatusForbidden, errors.New("没有访问该项目的权限"))
+			return
+		}
+		ctx := repo.WithProject(r.Context(), projectID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}))
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -234,24 +422,36 @@ func (s *Server) validSession(r *http.Request) bool {
 	return true
 }
 
-func (s *sessionStore) workspaceID(r *http.Request) string {
-	cookie, err := r.Cookie(sessionCookieName)
-	if err != nil {
-		return repo.DefaultWorkspaceID
+func (s *Server) authenticatedSession(r *http.Request) bool {
+	if !s.validSession(r) {
+		return false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	current, ok := s.sessions[cookie.Value]
-	if !ok || time.Now().After(current.ExpiresAt) {
-		return repo.DefaultWorkspaceID
+	current := s.sessionFromRequest(r)
+	if s.users == nil {
+		return true
 	}
-	if current.WorkspaceID == "" {
-		return repo.DefaultWorkspaceID
-	}
-	return current.WorkspaceID
+	_, ok := s.users.FindByEmail(current.Email)
+	return ok
 }
 
-func (s *sessionStore) setWorkspace(r *http.Request, workspaceID string) bool {
+func (s *sessionStore) organizationID(r *http.Request) string {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return repo.DefaultOrganizationID
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.sessions[cookie.Value]
+	if !ok || time.Now().After(current.ExpiresAt) {
+		return repo.DefaultOrganizationID
+	}
+	if current.OrganizationID == "" {
+		return repo.DefaultOrganizationID
+	}
+	return current.OrganizationID
+}
+
+func (s *sessionStore) setOrganization(r *http.Request, organizationID string) bool {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
 		return false
@@ -262,7 +462,7 @@ func (s *sessionStore) setWorkspace(r *http.Request, workspaceID string) bool {
 	if !ok || time.Now().After(current.ExpiresAt) {
 		return false
 	}
-	current.WorkspaceID = workspaceID
+	current.OrganizationID = organizationID
 	current.ProjectID = ""
 	s.sessions[cookie.Value] = current
 	if s.persist() != nil {
@@ -306,20 +506,55 @@ func (s *sessionStore) setProject(r *http.Request, projectID string) bool {
 
 func (s *Server) requireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.validSession(r) {
+		if !s.authenticatedSession(r) {
 			writeError(w, http.StatusUnauthorized, errors.New("authentication required"))
 			return
 		}
-		ctx := repo.WithProject(repo.WithWorkspace(r.Context(), s.sessions.workspaceID(r)), s.sessions.projectID(r))
+		organizationID := s.sessions.organizationID(r)
+		if requestedOrganizationID := strings.TrimSpace(r.Header.Get("X-SnakeRule-Organization-ID")); requestedOrganizationID != "" {
+			if !s.canAccessOrganization(r, requestedOrganizationID) {
+				writeError(w, http.StatusForbidden, errors.New("没有访问该组织的权限"))
+				return
+			}
+			organizationID = requestedOrganizationID
+		}
+		ctx := repo.WithProject(repo.WithOrganization(r.Context(), organizationID), s.sessions.projectID(r))
 		ctx = context.WithValue(ctx, invocationCredentialContextKey{}, invocationCredential{Type: "session"})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
+func (s *Server) requireOrganizationSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		organizationID := r.PathValue("organizationID")
+		if organizationID == "" {
+			writeError(w, http.StatusBadRequest, errors.New("organization id is required"))
+			return
+		}
+		r.Header.Set("X-SnakeRule-Organization-ID", organizationID)
+		s.requireSession(next).ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) requireSuperAdmin(next http.Handler) http.Handler {
+	return s.requireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.isSuperAdmin(r) {
+			writeError(w, http.StatusForbidden, errors.New("仅超级管理员可访问"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
 func (s *Server) requireSessionOrProjectKey(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.validSession(r) {
-			ctx := repo.WithProject(repo.WithWorkspace(r.Context(), s.sessions.workspaceID(r)), s.sessions.projectID(r))
+		if s.authenticatedSession(r) {
+			ctx := repo.WithProject(repo.WithOrganization(r.Context(), s.sessions.organizationID(r)), s.sessions.projectID(r))
+			projectID := s.sessions.projectID(r)
+			if projectID != "" && !s.canAccessProject(r.WithContext(ctx), projectID) {
+				writeError(w, http.StatusForbidden, errors.New("没有访问该项目的权限"))
+				return
+			}
 			ctx = context.WithValue(ctx, invocationCredentialContextKey{}, invocationCredential{Type: "session"})
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
@@ -344,7 +579,7 @@ func (s *Server) requireSessionOrProjectKey(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, errors.New("invalid project API key or JWT"))
 			return
 		}
-		ctx := repo.WithProject(repo.WithWorkspace(r.Context(), credential.Workspace), credential.Project)
+		ctx := repo.WithProject(repo.WithOrganization(r.Context(), credential.Organization), credential.Project)
 		ctx = context.WithValue(ctx, projectKeyAuthContextKey{}, true)
 		ctx = context.WithValue(ctx, invocationCredentialContextKey{}, invocationCredential{ID: credential.ID, Type: credential.Type})
 		next.ServeHTTP(w, r.WithContext(ctx))

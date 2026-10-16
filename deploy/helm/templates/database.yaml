@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "snakerule.fullname" . }}-database
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }
+  selector:
+    {{- include "snakerule.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "snakerule.fullname" . }}-database
+  labels:
+    {{- include "snakerule.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  serviceName: {{ include "snakerule.fullname" . }}-database
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "snakerule.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        {{- include "snakerule.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: database
+    spec:
+      containers:
+        - name: postgres
+          image: "{{ .Values.database.image.repository }}:{{ .Values.database.image.tag }}"
+          imagePullPolicy: {{ .Values.database.image.pullPolicy }}
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          env:
+            - { name: POSTGRES_DB, value: {{ .Values.database.name | quote }} }
+            - { name: POSTGRES_USER, value: {{ .Values.database.user | quote }} }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: {{ include "snakerule.secretName" . }}, key: POSTGRES_PASSWORD }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+            periodSeconds: 5
+          resources: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        annotations:
+          helm.sh/resource-policy: keep
+      spec:
+        accessModes:
+          {{- toYaml .Values.database.storage.accessModes | nindent 10 }}
+        {{- if .Values.database.storage.storageClass }}
+        storageClassName: {{ .Values.database.storage.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.database.storage.size }}

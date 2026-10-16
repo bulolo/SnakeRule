@@ -14,25 +14,29 @@ import (
 
 var ErrInvalid = errors.New("invalid request")
 
-type Rulesets struct{ repository repo.RulesetRepository }
+type RulesetService struct{ repository repo.RulesetRepository }
 
-func NewRulesets(repository repo.RulesetRepository) *Rulesets {
-	return &Rulesets{repository: repository}
+func NewRulesetService(repository repo.RulesetRepository) *RulesetService {
+	return &RulesetService{repository: repository}
 }
-func (s *Rulesets) List(ctx context.Context) ([]domain.Ruleset, error) { return s.repository.List(ctx) }
-func (s *Rulesets) Get(ctx context.Context, id string) (domain.Ruleset, error) {
+func (s *RulesetService) List(ctx context.Context) ([]domain.Ruleset, error) {
+	return s.repository.List(ctx)
+}
+func (s *RulesetService) Get(ctx context.Context, id string) (domain.Ruleset, error) {
 	return s.repository.Get(ctx, id)
 }
-func (s *Rulesets) Delete(ctx context.Context, id string) error { return s.repository.Delete(ctx, id) }
-func (s *Rulesets) Save(ctx context.Context, item domain.Ruleset) error {
-	item, err := NormalizeRuleset(item)
+func (s *RulesetService) Delete(ctx context.Context, id string) error {
+	return s.repository.Delete(ctx, id)
+}
+func (s *RulesetService) Save(ctx context.Context, item domain.Ruleset) error {
+	item, err := normalizeRuleset(item)
 	if err != nil {
 		return err
 	}
 	return s.repository.Save(ctx, item)
 }
 
-func NormalizeRuleset(item domain.Ruleset) (domain.Ruleset, error) {
+func normalizeRuleset(item domain.Ruleset) (domain.Ruleset, error) {
 	if strings.TrimSpace(item.ID) == "" || strings.TrimSpace(item.Name) == "" {
 		return domain.Ruleset{}, fmt.Errorf("%w: ruleset id and name are required", ErrInvalid)
 	}
@@ -69,7 +73,7 @@ func (s *Engine) Evaluate(ctx context.Context, id string, facts map[string]any) 
 }
 
 func (s *Engine) EvaluateDraft(set domain.Ruleset, facts map[string]any) (domain.Decision, error) {
-	set, err := NormalizeRuleset(set)
+	set, err := normalizeRuleset(set)
 	if err != nil {
 		return domain.Decision{}, err
 	}

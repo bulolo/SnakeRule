@@ -15,82 +15,70 @@ type ProjectRepository interface {
 	Delete(context.Context, string) error
 }
 
-type MemoryProjectRepository struct {
+type PersistentProjectRepository struct {
 	mu    sync.RWMutex
 	items map[string]map[string]domain.Project
 	path  string
 }
 
-func NewMemoryProjectRepository() *MemoryProjectRepository {
-	return &MemoryProjectRepository{items: make(map[string]map[string]domain.Project)}
+func newProjectRepository() *PersistentProjectRepository {
+	return &PersistentProjectRepository{items: make(map[string]map[string]domain.Project)}
 }
 
-func NewPersistentProjectRepository(path string) (*MemoryProjectRepository, error) {
-	r := NewMemoryProjectRepository()
+func NewPersistentProjectRepository(path string) (*PersistentProjectRepository, error) {
+	r := newProjectRepository()
 	r.path = path
-	if err := loadJSONFile(path, &r.items); err != nil {
+	if err := loadPersistent(path, &r.items); err != nil {
 		return nil, err
 	}
 	if r.items == nil {
-		r = NewMemoryProjectRepository()
+		r = newProjectRepository()
 		r.path = path
-	}
-	removedLegacy := false
-	for _, projects := range r.items {
-		if _, ok := projects["default"]; ok {
-			delete(projects, "default")
-			removedLegacy = true
-		}
-	}
-	if removedLegacy {
-		if err := saveJSONFile(path, r.items); err != nil {
-			return nil, err
-		}
 	}
 	return r, nil
 }
 
-func (r *MemoryProjectRepository) List(ctx context.Context) ([]domain.Project, error) {
+func (r *PersistentProjectRepository) List(ctx context.Context) ([]domain.Project, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	items := make([]domain.Project, 0, len(r.items[workspaceIDFrom(ctx)]))
-	for _, item := range r.items[workspaceIDFrom(ctx)] {
+	items := make([]domain.Project, 0, len(r.items[organizationIDFrom(ctx)]))
+	for _, item := range r.items[organizationIDFrom(ctx)] {
 		items = append(items, cloneProject(item))
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	return items, nil
 }
 
-func (r *MemoryProjectRepository) Get(ctx context.Context, id string) (domain.Project, error) {
+func (r *PersistentProjectRepository) Get(ctx context.Context, id string) (domain.Project, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	item, ok := r.items[workspaceIDFrom(ctx)][id]
+	item, ok := r.items[organizationIDFrom(ctx)][id]
 	if !ok {
 		return domain.Project{}, ErrNotFound
 	}
 	return cloneProject(item), nil
 }
 
-func (r *MemoryProjectRepository) Save(ctx context.Context, item domain.Project) error {
+func (r *PersistentProjectRepository) Save(ctx context.Context, item domain.Project) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	wid := workspaceIDFrom(ctx)
+	wid := organizationIDFrom(ctx)
 	if r.items[wid] == nil {
 		r.items[wid] = make(map[string]domain.Project)
 	}
 	r.items[wid][item.ID] = cloneProject(item)
-	return saveJSONFile(r.path, r.items)
+	return savePersistent(r.path, r.items)
 }
 
-func (r *MemoryProjectRepository) Delete(ctx context.Context, id string) error {
+func (r *PersistentProjectRepository) Delete(ctx context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	projects := r.items[workspaceIDFrom(ctx)]
+	projects := r.items[organizationIDFrom(ctx)]
 	if _, ok := projects[id]; !ok {
 		return ErrNotFound
 	}
 	delete(projects, id)
-	return saveJSONFile(r.path, r.items)
+	return savePersistent(r.path, r.items)
 }
 
 func cloneProject(item domain.Project) domain.Project {

@@ -36,6 +36,14 @@ for key, value in (("AUTH_PASSWORD", secrets.token_urlsafe(32)), ("LICENSE_ENCRY
     elif lines[index].partition("=")[2].strip() in ("", "generated-by-make-prod-init", "change-this-before-run"):
         lines[index] = prefix + value
         changed = True
+prefix = "POSTGRES_PASSWORD="
+index = next((i for i, line in enumerate(lines) if line.startswith(prefix)), None)
+if index is None:
+    lines.append(prefix + secrets.token_urlsafe(32))
+    changed = True
+elif lines[index].partition("=")[2].strip() in ("", "change-this-before-run", "snakerule_dev"):
+    lines[index] = prefix + secrets.token_urlsafe(32)
+    changed = True
 if changed:
     env_file.write_text("\n".join(lines) + "\n")
     print("Generated production settings in ignored deploy/.env.prod from backend/.env.example")

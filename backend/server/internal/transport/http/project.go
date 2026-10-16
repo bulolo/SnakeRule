@@ -29,10 +29,24 @@ func (s *Server) listProjects(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"items": items, "active_project_id": s.sessions.projectID(r)})
+	if !s.isSuperAdmin(r) && s.projectRole(r, "") != "organization_admin" {
+		user, _ := s.users.FindByEmail(s.sessionFromRequest(r).Email)
+		filtered := make([]domain.Project, 0, len(items))
+		for _, item := range items {
+			if role := user.ProjectRoles[item.ID]; role == "project_admin" || role == "project_member" {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+	writeJSON(w, 200, paginatedListData(r, items, map[string]any{"active_project_id": s.sessions.projectID(r)}))
 }
 
 func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
+	if !s.canManageOrganization(r, repo.OrganizationIDFrom(r.Context())) {
+		writeError(w, http.StatusForbidden, errors.New("仅组织管理员可创建项目"))
+		return
+	}
 	var input struct {
 		Name        string `json:"name"`
 		Slug        string `json:"slug"`
@@ -99,6 +113,10 @@ func ecommerceDemoRuleset() domain.Ruleset {
 }
 
 func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
+	if !s.canManageProject(r, r.PathValue("id")) {
+		writeError(w, http.StatusForbidden, errors.New("没有管理该项目的权限"))
+		return
+	}
 	item, err := s.projects.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
 		s.writeServiceError(w, err)
@@ -137,6 +155,10 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !s.canManageProject(r, id) {
+		writeError(w, http.StatusForbidden, errors.New("没有管理该项目的权限"))
+		return
+	}
 	if _, err := s.projects.Get(r.Context(), id); err != nil {
 		s.writeServiceError(w, err)
 		return
@@ -171,9 +193,21 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.invocationLogs != nil {
-		if err := s.invocationLogs.DeleteProject(repo.WorkspaceIDFrom(r.Context()), id); err != nil {
+		if err := s.invocationLogs.DeleteProject(repo.OrganizationIDFrom(r.Context()), id); err != nil {
 			writeError(w, 500, err)
 			return
+		}
+	}
+	if s.users != nil {
+		for _, user := range s.users.List() {
+			if _, exists := user.ProjectRoles[id]; !exists {
+				continue
+			}
+			delete(user.ProjectRoles, id)
+			if err := s.users.Save(user, ""); err != nil {
+				writeError(w, 500, err)
+				return
+			}
 		}
 	}
 	if err := s.projects.Delete(r.Context(), id); err != nil {
@@ -195,6 +229,10 @@ func (s *Server) setActiveProject(w http.ResponseWriter, r *http.Request) {
 		s.writeServiceError(w, err)
 		return
 	}
+	if !s.canAccessProject(r, input.ProjectID) {
+		writeError(w, http.StatusForbidden, errors.New("没有访问该项目的权限"))
+		return
+	}
 	if !s.sessions.setProject(r, input.ProjectID) {
 		writeError(w, 401, errors.New("authentication required"))
 		return
@@ -212,7 +250,7 @@ func (s *Server) listProjectKeys(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"items": items})
+	writeJSON(w, 200, paginatedListData(r, items, nil))
 }
 
 func (s *Server) createProjectKey(w http.ResponseWriter, r *http.Request) {
@@ -222,8 +260,10 @@ func (s *Server) createProjectKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Name string `json:"name"`
-		Type string `json:"type"`
+		Name       string  `json:"name"`
+		Type       string  `json:"type"`
+		SigningKey bool    `json:"signing_key"`
+		ExpiresAt  *string `json:"expires_at"`
 	}
 	if err := decodeBody(w, r, &input); err != nil {
 		writeError(w, 400, err)
@@ -233,6 +273,10 @@ func (s *Server) createProjectKey(w http.ResponseWriter, r *http.Request) {
 	input.Type = strings.TrimSpace(strings.ToLower(input.Type))
 	if input.Type == "" {
 		input.Type = "apikey"
+	}
+	if input.SigningKey && input.Type != "jwt" {
+		writeError(w, 400, errors.New("signing_key 仅支持 JWT"))
+		return
 	}
 	if input.Name == "" || len([]rune(input.Name)) > 80 || (input.Type != "apikey" && input.Type != "jwt") {
 		writeError(w, 400, errors.New("名称必填，且凭据类型必须为 apikey 或 jwt"))
@@ -244,8 +288,18 @@ func (s *Server) createProjectKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
+	var expiresAt *time.Time
+	if input.ExpiresAt != nil && strings.TrimSpace(*input.ExpiresAt) != "" {
+		parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(*input.ExpiresAt))
+		if err != nil || !parsed.After(now) {
+			writeError(w, 400, errors.New("expires_at 必须是未来时间的 RFC3339 时间"))
+			return
+		}
+		expiresAt = &parsed
+	}
 	keyID := "key-" + hex.EncodeToString(idBytes)
 	secret := ""
+	credentialKind := "api_key"
 	if input.Type == "apikey" {
 		secretBytes := make([]byte, 32)
 		if _, err := rand.Read(secretBytes); err != nil {
@@ -254,27 +308,55 @@ func (s *Server) createProjectKey(w http.ResponseWriter, r *http.Request) {
 		}
 		secret = "sr_live_" + base64.RawURLEncoding.EncodeToString(secretBytes)
 	} else {
-		claims, err := json.Marshal(projectJWTClaims{Issuer: "snakerule", Subject: keyID, Workspace: repo.WorkspaceIDFrom(r.Context()), Project: projectID, IssuedAt: now.Unix(), ExpiresAt: now.Add(30 * 24 * time.Hour).Unix()})
+		credentialKind = "access_token"
+		if input.SigningKey {
+			credentialKind = "signing_key"
+			secretBytes := make([]byte, 32)
+			if _, err := rand.Read(secretBytes); err != nil {
+				writeError(w, 500, err)
+				return
+			}
+			secret = "sr_sign_" + base64.RawURLEncoding.EncodeToString(secretBytes)
+		} else {
+			jwtExpiry := now.Add(30 * 24 * time.Hour)
+			if expiresAt != nil {
+				jwtExpiry = *expiresAt
+			}
+			expiresAt = &jwtExpiry
+			claims, err := json.Marshal(projectJWTClaims{Issuer: "snakerule", Subject: keyID, Organization: repo.OrganizationIDFrom(r.Context()), Project: projectID, IssuedAt: now.Unix(), ExpiresAt: jwtExpiry.Unix()})
+			if err != nil {
+				writeError(w, 500, err)
+				return
+			}
+			header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
+			payload := base64.RawURLEncoding.EncodeToString(claims)
+			unsigned := header + "." + payload
+			mac := hmac.New(sha256.New, s.jwtSigningKey)
+			_, _ = mac.Write([]byte(unsigned))
+			secret = unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+		}
+	}
+	digest := sha256.Sum256([]byte(secret))
+	key := domain.APIKeyCredential{ID: keyID, Name: input.Name, Type: input.Type, CredentialKind: credentialKind, ExpiresAt: expiresAt, Prefix: secret[:16], Hash: base64.RawURLEncoding.EncodeToString(digest[:]), Organization: repo.OrganizationIDFrom(r.Context()), Project: projectID, CreatedAt: now}
+	if input.Type == "jwt" && input.SigningKey {
+		encrypted, err := encryptProjectSigningSecret(s.jwtSigningKey, secret)
 		if err != nil {
 			writeError(w, 500, err)
 			return
 		}
-		header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
-		payload := base64.RawURLEncoding.EncodeToString(claims)
-		unsigned := header + "." + payload
-		mac := hmac.New(sha256.New, s.jwtSigningKey)
-		_, _ = mac.Write([]byte(unsigned))
-		secret = unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+		key.SigningSecretEncrypted = encrypted
 	}
-	digest := sha256.Sum256([]byte(secret))
-	key := domain.APIKeyCredential{ID: keyID, Name: input.Name, Type: input.Type, Prefix: secret[:16], Hash: base64.RawURLEncoding.EncodeToString(digest[:]), Workspace: repo.WorkspaceIDFrom(r.Context()), Project: projectID, CreatedAt: now}
 	if err := s.projectKeys.Save(r.Context(), key); err != nil {
 		writeError(w, 500, err)
 		return
 	}
 	key.Hash = ""
 	if input.Type == "jwt" {
-		writeJSON(w, 201, map[string]any{"item": key, "token": secret})
+		field := "token"
+		if input.SigningKey {
+			field = "signing_secret"
+		}
+		writeJSON(w, 201, map[string]any{"item": key, field: secret})
 		return
 	}
 	writeJSON(w, 201, map[string]any{"item": key, "secret": secret})

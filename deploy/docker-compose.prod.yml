@@ -9,6 +9,7 @@ services:
     environment:
       SERVER_ENV: production
       LICENSE_STORE_PATH: /data/license.json
+      DATABASE_URL: postgres://snakerule:${POSTGRES_PASSWORD}@database:5432/snakerule?sslmode=disable
     volumes:
       - snakerule_prod_data:/data
     tmpfs:
@@ -21,6 +22,24 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+    depends_on:
+      database:
+        condition: service_healthy
+
+  database:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: snakerule
+      POSTGRES_USER: snakerule
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in deploy/.env.prod}
+    volumes:
+      - snakerule_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snakerule -d snakerule"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   admin:
@@ -78,3 +97,4 @@ services:
 
 volumes:
   snakerule_prod_data:
+  snakerule_postgres:

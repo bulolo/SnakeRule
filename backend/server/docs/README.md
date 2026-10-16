@@ -1,70 +1,51 @@
 # SnakeRule Server
 
-Go API server and rule evaluation core. The current starter implements a JSON condition DSL, ruleset CRUD, and synchronous evaluation. Rules are held in memory for the MVP, so they are cleared when the process exits.
+Go HTTP API and deterministic rules engine. The admin client and public callers use the OpenAPI contract in this directory.
 
-## Run locally
+## Local development
 
 ```bash
 make dev-init
 make dev-up
 ```
 
-Open `http://localhost:8080` for the React admin. The Go API is available at `http://localhost:8081`; Nginx routes the unified `8080` entry to the admin and API. `make dev-up` runs Compose in the foreground; stop the stack with Ctrl+C or run `make dev-down` from another terminal. `make dev-status` checks container state and API health. `GET /healthz` checks process health and `GET /readyz` checks that the HTTP service is ready. PostgreSQL and Redis are optional services enabled with `make infra-up`.
+Open `http://localhost:8080` for the admin console. Nginx routes requests to the Go API and serves the frontend. PostgreSQL is required; Redis is optional. Use `make dev-down` to stop the stack.
 
-## Authentication
+The API exposes `/healthz` and `/readyz` for health checks. Service metadata is at `/api/v1/meta`.
 
-The admin signs in by email through `POST /api/v1/auth/login`. A successful login sets an HttpOnly, SameSite cookie; the browser checks it through `GET /api/v1/auth/session`. `POST /api/v1/auth/logout` revokes the session and clears the cookie. Ruleset CRUD, workspace management, and decision evaluation require a valid session. Configure the super administrator with `AUTH_EMAIL`, `AUTH_NAME`, and `AUTH_PASSWORD` in `backend/.env`; `backend/.env.example` contains a non-secret password placeholder. Production mode rejects that placeholder. Sessions and workspace selections are held in memory and expire after `AUTH_SESSION_TTL` (24 hours by default); restarting the API ends existing sessions. Multi-user RBAC is not implemented yet.
+## API contract
 
-## API sketch
+The API is exposed under `/api`. Successful JSON responses use `{ "code": 0, "msg": "success", "data": ... }`. Errors use a nonzero HTTP status and `{ "code": 1, "msg": "...", "error_code": "..." }`. List responses contain `list` and `pagination`; `is_pager=0` returns the full list.
 
-Create or replace a ruleset with `POST /api/v1/rulesets`:
+The API uses snake_case JSON fields. Management requests use the `snakerule_session` HttpOnly cookie. Rule evaluation also accepts project API Keys in `X-API-Key` and JWTs in `Authorization: Bearer`.
 
-```json
-{
-  "id": "order-risk",
-  "name": "Order risk",
-  "version": "1.0.0",
-  "enabled": true,
-  "rules": [
-    {
-      "id": "large-new-order",
-      "name": "Large order from a new customer",
-      "priority": 100,
-      "enabled": true,
-      "conditions": {
-        "all": [
-          { "fact": "order.amount", "operator": "greaterThan", "value": 10000 },
-          { "fact": "customer.isNew", "operator": "equal", "value": true }
-        ]
-      },
-      "actions": [{ "type": "tag", "config": { "label": "REVIEW" } }]
-    }
-  ]
-}
-```
+See [openapi.json](./openapi.json) for paths, schemas, authentication, pagination, and error responses. Regenerate the TypeScript SDK with `make gen-sdk`.
 
-Evaluate it with `POST /api/v1/engine/evaluate`:
+## Persistence and migrations
 
-```json
-{
-  "rulesetId": "order-risk",
-  "facts": { "order": { "amount": 12000 }, "customer": { "isNew": true } }
-}
-```
+PostgreSQL stores organizations, users, projects, memberships, rulesets, credentials, alert channels, notifications, invocation logs, sessions, platform settings, and license state. Goose migrations live in `internal/repo/migrations` and run at service startup. Migration versions are recorded in `snakerule_goose_db_version`.
 
-Conditions support recursive `all`, `any`, and `not` groups plus fact operators `equal`, `notEqual`, numeric comparisons, `in`, `notIn`, `contains`, `isNull`, and `isNotNull`. Priority is evaluated from highest to lowest; all matching enabled rules are returned. Actions are currently declarative output only and do not trigger side effects.
+The repository currently keeps a process-local cache and writes changes to PostgreSQL transactionally. Run a single API replica. The initial schema is defined in `00001_initial_schema.sql`.
 
-The service seeds an `order-risk` demo ruleset in the default workspace at startup. The admin provides a workspace switcher, workspace CRUD in Platform Settings, a drag-and-drop rule canvas, JSON advanced editing, and simulated decision execution. Rulesets are isolated by the active workspace but stored in memory; restarting the API clears them and resets workspaces to the default workspace.
+## Source layout
 
-## Package boundaries
+- `cmd/main`: process entry point.
+- `internal/bootstrap`: configuration, database startup, dependency wiring, and HTTP server setup.
+- `internal/config`: environment configuration.
+- `internal/domain`: domain types and repository contracts.
+- `internal/engine/evaluator`: deterministic condition validation and evaluation.
+- `internal/repo`: persistence adapters and Goose migrations.
+- `internal/service`: business validation and rule orchestration.
+- `internal/transport/http`: API routes, authentication, response envelope, and OpenAPI-facing handlers.
+- `internal/licensing`: Pulse authorization verification and encrypted license storage.
 
-- `cmd/main`: process signals and shutdown
-- `internal/bootstrap`: dependency wiring and HTTP server settings
-- `internal/config`: environment and `.env` configuration
-- `internal/domain`: ruleset, rule, condition, action, and decision contracts
-- `internal/engine/evaluator`: deterministic condition evaluation
-- `internal/repo`: repository contract and in-memory development adapter
-- `internal/service`: ruleset validation and decision orchestration
-- `internal/transport/http`: JSON API, request limits, health endpoints, and error mapping
+See [project architecture](../../../docs/architecture.md) for service boundaries and deployment details.
 
-See [project architecture](../../../docs/architecture.md) for current module boundaries, data lifecycle, deployment limits, and the staged evolution plan.
+## Code and schema conventions
+
+- Keep HTTP routing in `transport/http/routes.go`; place handlers by resource in a matching file such as `organization.go`, `project.go`, `rulesets.go`, or `alert_channels.go`.
+- Keep domain types and repository contracts in `domain`; put business validation in `service`; keep storage and SQL migration details in `repo`.
+- Use Go `MixedCaps` for exported identifiers and descriptive receiver names. Repository implementations use `Persistent<Resource>Repository`; constructors use `NewPersistent<Resource>Repository`.
+- Use plural `snake_case` PostgreSQL table names and `snake_case` columns. Use JSON `snake_case` fields and resource-oriented, plural, kebab-case API paths under `/api`.
+- All JSON API successes use the shared envelope. Collection endpoints use `list` and `pagination` with `is_pager`, `page`, and `size`.
+- Add database changes as ordered Goose migrations in `internal/repo/migrations`; the initial release defines the complete schema in `00001_initial_schema.sql`.

@@ -11,7 +11,7 @@ export default defineConfig({
     nav: [
       { text: '指南', link: '/guide/quick-start' },
       { text: '规则引擎', link: '/engine/rulesets' },
-      { text: 'API', link: '/api/overview' },
+      { text: 'API', link: '/api/v1/overview' },
       { text: '项目', link: 'https://github.com/bulolo/SnakeRule' },
     ],
     sidebar: {
@@ -21,8 +21,8 @@ export default defineConfig({
       '/engine/': [
         { text: '规则引擎', items: [{ text: '规则集与条件', link: '/engine/rulesets' }, { text: '决策试运行', link: '/engine/evaluation' }] },
       ],
-      '/api/': [
-        { text: '开发接口', items: [{ text: 'API 概览', link: '/api/overview' }] },
+      '/api/v1/': [
+        { text: '开发接口', items: [{ text: 'API 概览', link: '/api/v1/overview' }] },
       ],
     },
     socialLinks: [{ icon: 'github', link: 'https://github.com/bulolo/SnakeRule' }],

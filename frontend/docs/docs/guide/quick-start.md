@@ -31,7 +31,7 @@ make dev-up
 
 ## 平台授权
 
-登录后可在「平台设置 → 系统信息」查看版本、实例 ID 和授权状态，并上传、替换或清除授权文件。`make dev-init` 会在被 Git 忽略的 `backend/.env` 中生成本地加密密钥；重启或重建容器时该密钥会保留，`LICENSE_STORE_PATH` 默认写入持久化数据卷。
+登录后可在「平台设置 → 系统信息」查看版本、实例 ID 和授权状态，并上传、替换或清除授权文件。`make dev-init` 会在被 Git 忽略的 `backend/.env` 中生成本地加密密钥；重启或重建容器时该密钥会保留。
 
 实际校验授权前，需要在 `backend/.env` 配置 Pulse 为 SnakeRule 签发的 `PULSE_PRODUCT_PUBLIC_KEY`。公钥需由授权签发方提供；没有配置时平台仍可运行社区功能，但上传的授权不会被接受。授权凭证由 Pulse Agent 校验，通过后才会加密保存在服务端。当前规则引擎尚无需要商业授权解锁的功能点，因此页面只展示授权状态，不会改变现有规则执行能力。
 
@@ -49,7 +49,7 @@ make gen-sdk      # 根据 OpenAPI 更新 TypeScript SDK
 
 ## 数据说明
 
-当前开发版本将规则集、工作空间和登录会话保存在 API 进程内存中，后端重启后会恢复默认工作空间和演示规则，现有会话失效。授权密文单独保存在 Docker 持久化数据卷中。PostgreSQL 与 Redis 是可选基础设施，目前不是规则存储的后端。
+开发与生产 Compose 均会启动 PostgreSQL 保存业务数据。生产部署请定期备份数据库。Redis 为可选基础设施。
 
 ## 生产 Compose
 
@@ -61,4 +61,4 @@ make prod-init
 make prod-up
 ```
 
-网关默认监听 `http://localhost:8080`，管理端和文档分别位于 `/` 与 `/docs/`。生产 Compose 只公开 Nginx 网关端口，授权数据使用 Docker 持久化卷；规则集、工作空间和登录会话目前仍在 API 内存中，重启后会清空。当前 Compose 适合单实例试运行，正式承载业务数据前需将这三类数据接入持久化数据库，并在公网前配置 TLS 反向代理。
+Nginx 反向代理默认监听 `http://localhost:8080`，管理端和文档分别位于 `/` 与 `/docs/`。生产 Compose 只公开 Nginx 端口，业务数据写入 PostgreSQL 持久化卷；公网部署前请配置 TLS 和数据库备份。当前 API 仍按单副本部署。

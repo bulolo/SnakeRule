@@ -1,0 +1,71 @@
+package httpapi
+
+import (
+	"net/http"
+
+	appversion "github.com/szplanner/snakerule/internal/version"
+)
+
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	apiMux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", s.index)
+	mux.Handle("GET /assets/", s.assets())
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		writeRawJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+		writeRawJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	})
+	apiMux.HandleFunc("GET /api/v1/meta", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"version": appversion.Version})
+	})
+	apiMux.HandleFunc("POST /api/v1/auth/login", s.login)
+	apiMux.HandleFunc("GET /api/v1/auth/session", s.currentSession)
+	apiMux.HandleFunc("POST /api/v1/auth/logout", s.logout)
+	apiMux.Handle("GET /api/v1/platform/license", s.requireSuperAdmin(http.HandlerFunc(s.getLicense)))
+	apiMux.Handle("POST /api/v1/platform/license", s.requireSuperAdmin(http.HandlerFunc(s.uploadLicense)))
+	apiMux.Handle("DELETE /api/v1/platform/license", s.requireSuperAdmin(http.HandlerFunc(s.clearLicense)))
+	// Brand settings are public presentation data so the login screen can render them.
+	apiMux.HandleFunc("GET /api/v1/platform/settings", s.getPlatformSettings)
+	apiMux.Handle("PUT /api/v1/platform/settings", s.requireSuperAdmin(http.HandlerFunc(s.updatePlatformSettings)))
+	apiMux.Handle("GET /api/v1/organizations", s.requireSession(http.HandlerFunc(s.listOrganizations)))
+	apiMux.Handle("POST /api/v1/organizations", s.requireSession(http.HandlerFunc(s.createOrganization)))
+	apiMux.Handle("PUT /api/v1/organizations/active", s.requireSession(http.HandlerFunc(s.setActiveOrganization)))
+	apiMux.Handle("PUT /api/v1/organizations/{id}", s.requireSession(http.HandlerFunc(s.updateOrganization)))
+	apiMux.Handle("DELETE /api/v1/organizations/{id}", s.requireSession(http.HandlerFunc(s.deleteOrganization)))
+	apiMux.Handle("GET /api/v1/organizations/{organizationID}/alert-channels", s.requireOrganizationSession(http.HandlerFunc(s.listAlertChannels)))
+	apiMux.Handle("GET /api/v1/organizations/{organizationID}/users", s.requireOrganizationSession(http.HandlerFunc(s.listUsers)))
+	apiMux.Handle("POST /api/v1/organizations/{organizationID}/users", s.requireOrganizationSession(http.HandlerFunc(s.saveUser)))
+	apiMux.Handle("PUT /api/v1/organizations/{organizationID}/users/{id}", s.requireOrganizationSession(http.HandlerFunc(s.saveUser)))
+	apiMux.Handle("DELETE /api/v1/organizations/{organizationID}/users/{id}", s.requireOrganizationSession(http.HandlerFunc(s.deleteUser)))
+	apiMux.Handle("POST /api/v1/organizations/{organizationID}/alert-channels", s.requireOrganizationSession(http.HandlerFunc(s.saveAlertChannel)))
+	apiMux.Handle("PUT /api/v1/organizations/{organizationID}/alert-channels/{id}", s.requireOrganizationSession(http.HandlerFunc(s.saveAlertChannel)))
+	apiMux.Handle("DELETE /api/v1/organizations/{organizationID}/alert-channels/{id}", s.requireOrganizationSession(http.HandlerFunc(s.deleteAlertChannel)))
+	apiMux.Handle("POST /api/v1/organizations/{organizationID}/alert-channels/{id}/test", s.requireOrganizationSession(http.HandlerFunc(s.testAlertChannel)))
+	apiMux.Handle("GET /api/v1/projects/{id}/members", s.requireProjectPathAccess(http.HandlerFunc(s.listProjectMembers), false))
+	apiMux.Handle("GET /api/v1/projects/{id}/member-candidates", s.requireProjectPathAccess(http.HandlerFunc(s.listProjectMemberCandidates), true))
+	apiMux.Handle("POST /api/v1/projects/{id}/members", s.requireProjectPathAccess(http.HandlerFunc(s.addProjectMember), true))
+	apiMux.Handle("PUT /api/v1/projects/{id}/members/{userID}", s.requireProjectPathAccess(http.HandlerFunc(s.updateProjectMember), true))
+	apiMux.Handle("DELETE /api/v1/projects/{id}/members/{userID}", s.requireProjectPathAccess(http.HandlerFunc(s.removeProjectMember), true))
+	apiMux.Handle("GET /api/v1/notifications", s.requireSession(http.HandlerFunc(s.listNotifications)))
+	apiMux.Handle("POST /api/v1/notifications/read-all", s.requireSession(http.HandlerFunc(s.readAllNotifications)))
+	apiMux.Handle("POST /api/v1/notifications/{id}/read", s.requireSession(http.HandlerFunc(s.readNotification)))
+	apiMux.Handle("GET /api/v1/projects", s.requireSession(http.HandlerFunc(s.listProjects)))
+	apiMux.Handle("POST /api/v1/projects", s.requireSession(http.HandlerFunc(s.createProject)))
+	apiMux.Handle("PUT /api/v1/projects/active", s.requireSession(http.HandlerFunc(s.setActiveProject)))
+	apiMux.Handle("PUT /api/v1/projects/{id}", s.requireSession(http.HandlerFunc(s.updateProject)))
+	apiMux.Handle("DELETE /api/v1/projects/{id}", s.requireSession(http.HandlerFunc(s.deleteProject)))
+	apiMux.Handle("GET /api/v1/projects/{id}/credentials", s.requireProjectPathAccess(http.HandlerFunc(s.listProjectKeys), false))
+	apiMux.Handle("GET /api/v1/projects/{id}/invocations", s.requireProjectPathAccess(http.HandlerFunc(s.listProjectInvocations), false))
+	apiMux.Handle("POST /api/v1/projects/{id}/credentials", s.requireProjectPathAccess(http.HandlerFunc(s.createProjectKey), true))
+	apiMux.Handle("DELETE /api/v1/projects/{id}/credentials/{keyID}", s.requireProjectPathAccess(http.HandlerFunc(s.deleteProjectKey), true))
+	apiMux.Handle("GET /api/v1/rulesets", s.requireCurrentProjectAccess(http.HandlerFunc(s.listRulesets), false))
+	apiMux.Handle("POST /api/v1/rulesets", s.requireCurrentProjectAccess(http.HandlerFunc(s.saveRuleset), true))
+	apiMux.Handle("GET /api/v1/rulesets/{id}", s.requireCurrentProjectAccess(http.HandlerFunc(s.getRuleset), false))
+	apiMux.Handle("PUT /api/v1/rulesets/{id}", s.requireCurrentProjectAccess(http.HandlerFunc(s.saveRuleset), true))
+	apiMux.Handle("DELETE /api/v1/rulesets/{id}", s.requireCurrentProjectAccess(http.HandlerFunc(s.deleteRuleset), true))
+	apiMux.Handle("POST /api/v1/engine/evaluate", s.requireSessionOrProjectKey(http.HandlerFunc(s.evaluate)))
+	mux.Handle("/api/v1/", apiMux)
+	return s.recover(s.accessLog(mux))
+}

@@ -77,8 +77,10 @@ export function CustomSelect({
 
 export function LoginScreen({
   onSuccess,
+  brand,
 }: {
   onSuccess: (email: string) => void;
+  brand?: { name: string; tagline: string; logo_url: string };
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -104,13 +106,13 @@ export function LoginScreen({
     <main className="login-page">
       <div className="login-card">
         <a className="brand login-brand" href="/">
-          <span className="brand-icon">S</span>
+          <span className={`brand-icon${brand?.logo_url ? " has-logo" : ""}`}>{brand?.logo_url ? <img src={brand.logo_url} alt="" /> : (brand?.name?.[0] ?? "S")}</span>
           <span>
-            SnakeRule<small>RULE ENGINE</small>
+            {brand?.name ?? "SnakeRule"}<small>{brand?.tagline || "RULE ENGINE"}</small>
           </span>
         </a>
         <div className="login-heading">
-          <small className="eyebrow">SECURE WORKSPACE</small>
+          <small className="eyebrow">SECURE ORGANIZATION</small>
           <h1>欢迎回来</h1>
           <p>登录以管理规则集并运行决策测试。</p>
         </div>
@@ -148,10 +150,10 @@ export function LoginScreen({
           </button>
         </form>
         <div className="login-foot">
-          <i /> 安全会话连接 <span>·</span> SnakeRule
+          <i /> 安全会话连接 <span>·</span> {brand?.name ?? "SnakeRule"}
         </div>
       </div>
-      <small className="login-version">规则引擎管理控制台</small>
+      <small className="login-version">{brand?.tagline || "规则引擎管理控制台"}</small>
     </main>
   );
 }
