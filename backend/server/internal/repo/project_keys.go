@@ -19,7 +19,7 @@ type ProjectKeyRepository interface {
 type PersistentProjectKeyRepository struct {
 	mu    sync.RWMutex
 	items map[string]domain.APIKeyCredential
-	path  string
+	key   string
 }
 
 type persistedProjectKey struct {
@@ -30,11 +30,11 @@ type persistedProjectKey struct {
 func newProjectKeyRepository() *PersistentProjectKeyRepository {
 	return &PersistentProjectKeyRepository{items: map[string]domain.APIKeyCredential{}}
 }
-func NewPersistentProjectKeyRepository(path string) (*PersistentProjectKeyRepository, error) {
+func NewPersistentProjectKeyRepository(key string) (*PersistentProjectKeyRepository, error) {
 	r := newProjectKeyRepository()
-	r.path = path
+	r.key = key
 	var stored map[string]persistedProjectKey
-	if err := loadPersistent(path, &stored); err != nil {
+	if err := loadEntity(key, &stored); err != nil {
 		return nil, err
 	}
 	for id, item := range stored {
@@ -58,7 +58,7 @@ func (r *PersistentProjectKeyRepository) persist() error {
 		c.SigningSecretEncrypted = ""
 		stored[id] = persistedProjectKey{Credential: c, Hash: hash, Organization: organization, Project: project, SigningSecretEncrypted: encrypted}
 	}
-	return savePersistent(r.path, stored)
+	return saveEntity(r.key, stored)
 }
 func (r *PersistentProjectKeyRepository) List(ctx context.Context, project string) ([]domain.APIKeyCredential, error) {
 	r.mu.RLock()

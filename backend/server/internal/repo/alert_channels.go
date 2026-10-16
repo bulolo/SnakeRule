@@ -20,7 +20,7 @@ type AlertChannelRepository interface {
 type PersistentAlertChannelRepository struct {
 	mu    sync.RWMutex
 	items map[string]domain.AlertChannel
-	path  string
+	key   string
 }
 
 type persistedAlertChannel struct {
@@ -32,11 +32,11 @@ func newAlertChannelRepository() *PersistentAlertChannelRepository {
 	return &PersistentAlertChannelRepository{items: make(map[string]domain.AlertChannel)}
 }
 
-func NewPersistentAlertChannelRepository(path string) (*PersistentAlertChannelRepository, error) {
+func NewPersistentAlertChannelRepository(key string) (*PersistentAlertChannelRepository, error) {
 	r := newAlertChannelRepository()
-	r.path = path
+	r.key = key
 	var stored map[string]persistedAlertChannel
-	if err := loadPersistent(path, &stored); err != nil {
+	if err := loadEntity(key, &stored); err != nil {
 		return nil, err
 	}
 	for id, item := range stored {
@@ -57,7 +57,7 @@ func (r *PersistentAlertChannelRepository) persist() error {
 		item.HasSecret = secret != ""
 		stored[id] = persistedAlertChannel{Channel: item, Secret: secret}
 	}
-	return savePersistent(r.path, stored)
+	return saveEntity(r.key, stored)
 }
 
 func (r *PersistentAlertChannelRepository) List(ctx context.Context) ([]domain.AlertChannel, error) {

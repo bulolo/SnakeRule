@@ -7,15 +7,14 @@ COPY server/ ./
 RUN go build -o /usr/local/bin/snakerule-server ./cmd/main
 COPY pulse-agent/ /tmp/pulse-agent/
 ARG TARGETARCH
-RUN mkdir -p /opt/pulse/bin /run/pulse /data \
+RUN mkdir -p /opt/pulse/bin /run/pulse \
     && grep " pulse-agent-linux-${TARGETARCH}$" /tmp/pulse-agent/pulse-agent.sha256 | (cd /tmp/pulse-agent && sha256sum -c -) \
     && cp "/tmp/pulse-agent/pulse-agent-linux-${TARGETARCH}" /opt/pulse/bin/pulse-agent \
     && chmod 0755 /opt/pulse/bin/pulse-agent \
     && addgroup -S -g 10001 snakerule \
     && adduser -S -D -H -u 10001 -G snakerule snakerule \
-    && chown -R 10001:10001 /app /opt/pulse /run/pulse /data /usr/local/bin/snakerule-server \
+    && chown -R 10001:10001 /app /opt/pulse /run/pulse /usr/local/bin/snakerule-server \
     && rm -rf /tmp/pulse-agent
 USER 10001:10001
-ENV SERVER_PORT=8081 LICENSE_STORE_PATH=/data/license.json PULSE_AGENT_BIN=/opt/pulse/bin/pulse-agent PULSE_AGENT_SOCKET=/run/pulse/agent.sock
 EXPOSE 8081
 CMD ["/usr/local/bin/snakerule-server"]

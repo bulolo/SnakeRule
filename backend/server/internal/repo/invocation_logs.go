@@ -11,12 +11,12 @@ import (
 type PersistentInvocationLogRepository struct {
 	mu    sync.RWMutex
 	items []domain.InvocationLog
-	path  string
+	key   string
 }
 
-func NewPersistentInvocationLogRepository(path string) (*PersistentInvocationLogRepository, error) {
-	r := &PersistentInvocationLogRepository{path: path}
-	if err := loadPersistent(path, &r.items); err != nil {
+func NewPersistentInvocationLogRepository(key string) (*PersistentInvocationLogRepository, error) {
+	r := &PersistentInvocationLogRepository{key: key}
+	if err := loadEntity(key, &r.items); err != nil {
 		return nil, err
 	}
 	return r, nil
@@ -32,7 +32,7 @@ func (r *PersistentInvocationLogRepository) Add(item domain.InvocationLog) error
 	if len(r.items) > 2000 {
 		r.items = append([]domain.InvocationLog(nil), r.items[len(r.items)-2000:]...)
 	}
-	return savePersistent(r.path, r.items)
+	return saveEntity(r.key, r.items)
 }
 
 func (r *PersistentInvocationLogRepository) List(organizationID, projectID string) []domain.InvocationLog {
@@ -58,5 +58,5 @@ func (r *PersistentInvocationLogRepository) DeleteProject(organizationID, projec
 		}
 	}
 	r.items = kept
-	return savePersistent(r.path, r.items)
+	return saveEntity(r.key, r.items)
 }

@@ -5,7 +5,6 @@ backend:
   replicaCount: 1
   image: { repository: snakerule-server, tag: prod, pullPolicy: IfNotPresent }
   service: { port: 8081 }
-  persistence: { enabled: true, storageClass: "", accessModes: [ReadWriteOnce], size: 2Gi }
   resources: {}
   existingSecret: ""
   secretChecksum: ""
@@ -14,7 +13,6 @@ backend:
     authName: SuperAdmin
     authSessionTTL: 24h
     authPassword: ""
-    licenseStorePath: /data/license.json
     licenseEncryptionKey: ""
     jwtSecret: ""
     pulseProductPublicKey: ""

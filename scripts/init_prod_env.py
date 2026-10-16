@@ -11,10 +11,11 @@ template = root / "backend/.env.example"
 if not env_file.exists():
     shutil.copyfile(template, env_file)
 lines = env_file.read_text().splitlines()
-changed = False
+filtered_lines = [line for line in lines if not line.startswith("LICENSE_STORE_PATH=")]
+changed = len(filtered_lines) != len(lines)
+lines = filtered_lines
 defaults = {
     "SERVER_ENV": "production",
-    "LICENSE_STORE_PATH": "/data/license.json",
     "LOG_LEVEL": "info",
 }
 for key, value in defaults.items():
@@ -23,7 +24,7 @@ for key, value in defaults.items():
     if index is None:
         lines.append(prefix + value)
         changed = True
-    elif lines[index].partition("=")[2].strip() in ("", "development", "./data/license.json", "debug"):
+    elif lines[index].partition("=")[2].strip() in ("", "development", "debug"):
         lines[index] = prefix + value
         changed = True
 

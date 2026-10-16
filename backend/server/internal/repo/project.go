@@ -18,22 +18,22 @@ type ProjectRepository interface {
 type PersistentProjectRepository struct {
 	mu    sync.RWMutex
 	items map[string]map[string]domain.Project
-	path  string
+	key   string
 }
 
 func newProjectRepository() *PersistentProjectRepository {
 	return &PersistentProjectRepository{items: make(map[string]map[string]domain.Project)}
 }
 
-func NewPersistentProjectRepository(path string) (*PersistentProjectRepository, error) {
+func NewPersistentProjectRepository(key string) (*PersistentProjectRepository, error) {
 	r := newProjectRepository()
-	r.path = path
-	if err := loadPersistent(path, &r.items); err != nil {
+	r.key = key
+	if err := loadEntity(key, &r.items); err != nil {
 		return nil, err
 	}
 	if r.items == nil {
 		r = newProjectRepository()
-		r.path = path
+		r.key = key
 	}
 	return r, nil
 }
@@ -67,7 +67,7 @@ func (r *PersistentProjectRepository) Save(ctx context.Context, item domain.Proj
 		r.items[wid] = make(map[string]domain.Project)
 	}
 	r.items[wid][item.ID] = cloneProject(item)
-	return savePersistent(r.path, r.items)
+	return saveEntity(r.key, r.items)
 }
 
 func (r *PersistentProjectRepository) Delete(ctx context.Context, id string) error {
@@ -78,7 +78,7 @@ func (r *PersistentProjectRepository) Delete(ctx context.Context, id string) err
 		return ErrNotFound
 	}
 	delete(projects, id)
-	return savePersistent(r.path, r.items)
+	return saveEntity(r.key, r.items)
 }
 
 func cloneProject(item domain.Project) domain.Project {

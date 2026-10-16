@@ -7,10 +7,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      LICENSE_STORE_PATH: /data/license.json
       DATABASE_URL: postgres://snakerule:snakerule_dev@postgres:5432/snakerule?sslmode=disable
-    volumes:
-      - snakerule_data:/data
     ports:
       - "${SERVER_PORT:-8081}:${SERVER_PORT:-8081}"
     healthcheck:
@@ -117,7 +114,6 @@ services:
     command: redis-server --appendonly yes
 
 volumes:
-  snakerule_data:
   admin_node_modules:
   docs_node_modules:
   postgres_data:

@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -62,51 +61,50 @@ func New() (*App, error) {
 		return nil, fmt.Errorf("initialize PostgreSQL storage: %w", err)
 	}
 	repo.SetDatabase(db)
-	licenseManager, err := licensing.New(cfg.License.StorePath, cfg.License.EncryptionKey)
+	licenseManager, err := licensing.New(cfg.License.EncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("initialize license manager: %w", err)
 	}
-	stateDir := filepath.Join(filepath.Dir(cfg.License.StorePath), "state")
-	store, err := repo.NewPersistentRulesetRepository(filepath.Join(stateDir, "rulesets.json"))
+	store, err := repo.NewPersistentRulesetRepository("rulesets")
 	if err != nil {
 		return nil, fmt.Errorf("load rulesets: %w", err)
 	}
-	organizationStore, err := repo.NewPersistentOrganizationRepository(filepath.Join(stateDir, "organizations.json"))
+	organizationStore, err := repo.NewPersistentOrganizationRepository("organizations")
 	if err != nil {
 		return nil, fmt.Errorf("load organizations: %w", err)
 	}
-	projectStore, err := repo.NewPersistentProjectRepository(filepath.Join(stateDir, "projects.json"))
+	projectStore, err := repo.NewPersistentProjectRepository("projects")
 	if err != nil {
 		return nil, fmt.Errorf("load projects: %w", err)
 	}
-	projectKeyStore, err := repo.NewPersistentProjectKeyRepository(filepath.Join(stateDir, "project-keys.json"))
+	projectKeyStore, err := repo.NewPersistentProjectKeyRepository("project-keys")
 	if err != nil {
 		return nil, fmt.Errorf("load project keys: %w", err)
 	}
-	userStore, err := repo.NewPersistentUserRepository(filepath.Join(stateDir, "users.json"))
+	userStore, err := repo.NewPersistentUserRepository("users")
 	if err != nil {
 		return nil, fmt.Errorf("load users: %w", err)
 	}
 	if err = userStore.SeedSuperAdmin(cfg.Auth.Email, cfg.Auth.Name, cfg.Auth.Password); err != nil {
 		return nil, fmt.Errorf("seed superadmin: %w", err)
 	}
-	alertChannelStore, err := repo.NewPersistentAlertChannelRepository(filepath.Join(stateDir, "alert-channels.json"))
+	alertChannelStore, err := repo.NewPersistentAlertChannelRepository("alert-channels")
 	if err != nil {
 		return nil, fmt.Errorf("load alert channels: %w", err)
 	}
-	platformSettingsStore, err := repo.NewPersistentPlatformSettingsRepository(filepath.Join(stateDir, "platform-settings.json"))
+	platformSettingsStore, err := repo.NewPersistentPlatformSettingsRepository("platform-settings")
 	if err != nil {
 		return nil, fmt.Errorf("load platform settings: %w", err)
 	}
-	notificationStore, err := repo.NewPersistentNotificationRepository(filepath.Join(stateDir, "notifications.json"))
+	notificationStore, err := repo.NewPersistentNotificationRepository("notifications")
 	if err != nil {
 		return nil, fmt.Errorf("load notifications: %w", err)
 	}
-	invocationLogStore, err := repo.NewPersistentInvocationLogRepository(filepath.Join(stateDir, "invocations.json"))
+	invocationLogStore, err := repo.NewPersistentInvocationLogRepository("invocations")
 	if err != nil {
 		return nil, fmt.Errorf("load invocation logs: %w", err)
 	}
-	jwtSigningKey, err := loadOrCreateJWTSigningKey(filepath.Join(stateDir, "jwt-signing.key"))
+	jwtSigningKey, err := loadOrCreateJWTSigningKey()
 	if err != nil {
 		return nil, fmt.Errorf("load JWT signing key: %w", err)
 	}
@@ -118,7 +116,7 @@ func New() (*App, error) {
 	organizations := service.NewOrganizationService(organizationStore)
 	rulesets := service.NewRulesetService(store)
 	engine := service.NewEngine(store)
-	handler := httpapi.NewServer(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL, SessionStorePath: filepath.Join(stateDir, "sessions.json"), JWTSigningKey: jwtSigningKey}, licenseManager, organizations)
+	handler := httpapi.NewServer(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL, SessionStoreKey: "sessions", JWTSigningKey: jwtSigningKey}, licenseManager, organizations)
 	handler.SetAlertChannelRepository(alertChannelStore)
 	handler.SetPlatformSettingsRepository(platformSettingsStore)
 	handler.SetNotificationRepository(notificationStore)

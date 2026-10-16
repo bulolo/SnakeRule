@@ -46,7 +46,6 @@ type Evaluator func(context.Context, string, string, string, string, time.Durati
 type Manager struct {
 	mu       sync.RWMutex
 	opMu     sync.Mutex
-	path     string
 	key      []byte
 	state    diskState
 	snapshot *pulseagent.LicenseSnapshot
@@ -54,11 +53,8 @@ type Manager struct {
 	evaluate Evaluator
 }
 
-func New(path, encryptionKey string) (*Manager, error) {
-	if path == "" {
-		path = "./data/license.json"
-	}
-	m := &Manager{path: path, evaluate: pulseagent.Evaluate}
+func New(encryptionKey string) (*Manager, error) {
+	m := &Manager{evaluate: pulseagent.Evaluate}
 	if encryptionKey != "" {
 		decoded, err := hex.DecodeString(strings.TrimSpace(encryptionKey))
 		if err != nil || len(decoded) != 32 {
@@ -66,7 +62,7 @@ func New(path, encryptionKey string) (*Manager, error) {
 		}
 		m.key = decoded
 	}
-	if err := repo.LoadPersistent(path, &m.state); err != nil {
+	if err := repo.LoadEntity("license", &m.state); err != nil {
 		return nil, err
 	}
 	if !canonicalUUIDv4.MatchString(m.state.InstallationID) {
@@ -203,7 +199,7 @@ func (m *Manager) refresh(ctx context.Context, key string) {
 }
 
 func (m *Manager) persist(state diskState) error {
-	return repo.SavePersistent(m.path, state)
+	return repo.SaveEntity("license", state)
 }
 
 func (m *Manager) encrypt(value string) (string, error) {

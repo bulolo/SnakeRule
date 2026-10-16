@@ -1,22 +1,19 @@
 package httpapi
 
 import (
-	"bytes"
-	"crypto/hmac"
+	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/szplanner/snakerule/internal/domain"
-	"github.com/szplanner/snakerule/internal/repo"
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
+
+	"github.com/szplanner/snakerule/internal/domain"
+	"github.com/szplanner/snakerule/internal/repo"
 )
 
 func (s *Server) listAlertChannels(w http.ResponseWriter, r *http.Request) {
@@ -119,41 +116,12 @@ func (s *Server) testAlertChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	message := "SnakeRule 告警渠道测试：这是一条来自系统设置的测试通知。"
-	body, err := alertPayload(item.Type, message)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, errors.New("无法生成测试通知"))
-		return
-	}
-	targetURL := item.URL
-	if item.Type == "dingtalk" && item.Secret != "" {
-		timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-		mac := hmac.New(sha256.New, []byte(item.Secret))
-		_, _ = mac.Write([]byte(timestamp + "\n" + item.Secret))
-		parsed, _ := url.Parse(targetURL)
-		query := parsed.Query()
-		query.Set("timestamp", timestamp)
-		query.Set("sign", base64.StdEncoding.EncodeToString(mac.Sum(nil)))
-		parsed.RawQuery = query.Encode()
-		targetURL = parsed.String()
-	}
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodPost, targetURL, bytes.NewReader(body))
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	request, err := newAlertRequest(ctx, item, message)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, errors.New("Webhook 地址无效"))
 		return
-	}
-	request.Header.Set("Content-Type", "application/json")
-	if item.Type == "webhook" && item.Secret != "" {
-		request.Header.Set("Authorization", "Bearer "+item.Secret)
-	}
-	if item.Type == "feishu" && item.Secret != "" {
-		var payload map[string]any
-		_ = json.Unmarshal(body, &payload)
-		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-		mac := hmac.New(sha256.New, []byte(timestamp+"\n"+item.Secret))
-		payload["timestamp"], payload["sign"] = timestamp, base64.StdEncoding.EncodeToString(mac.Sum(nil))
-		body, _ = json.Marshal(payload)
-		request.Body = io.NopCloser(bytes.NewReader(body))
-		request.ContentLength = int64(len(body))
 	}
 	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
@@ -207,7 +175,7 @@ func alertPayload(channelType, message string) ([]byte, error) {
 	case "dingtalk":
 		payload = map[string]any{"msgtype": "text", "text": map[string]string{"content": message}}
 	default:
-		payload = map[string]any{"type": "snakerule.alert.test", "title": "SnakeRule 告警渠道测试", "message": message, "sent_at": time.Now().UTC().Format(time.RFC3339)}
+		payload = map[string]any{"type": "snakerule.alert", "title": "SnakeRule 告警", "message": message, "sent_at": time.Now().UTC().Format(time.RFC3339)}
 	}
 	return json.Marshal(payload)
 }

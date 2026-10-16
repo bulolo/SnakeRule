@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/szplanner/snakerule/internal/domain"
+	"github.com/szplanner/snakerule/internal/repo"
 )
 
 func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request) {
@@ -13,7 +14,7 @@ func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, paginatedListData(r, items, nil))
 		return
 	}
-	items = s.notifications.List()
+	items = s.notifications.List(repo.OrganizationIDFrom(r.Context()))
 	writeJSON(w, http.StatusOK, paginatedListData(r, items, nil))
 }
 func (s *Server) readNotification(w http.ResponseWriter, r *http.Request) {
@@ -21,15 +22,15 @@ func (s *Server) readNotification(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errors.New("通知不存在"))
 		return
 	}
-	if err := s.notifications.MarkRead(r.PathValue("id")); err != nil {
+	if err := s.notifications.MarkRead(repo.OrganizationIDFrom(r.Context()), r.PathValue("id")); err != nil {
 		s.writeServiceError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"read": true})
 }
-func (s *Server) readAllNotifications(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) readAllNotifications(w http.ResponseWriter, r *http.Request) {
 	if s.notifications != nil {
-		if err := s.notifications.MarkAllRead(); err != nil {
+		if err := s.notifications.MarkAllRead(repo.OrganizationIDFrom(r.Context())); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}

@@ -13,11 +13,10 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -S -g 10001 snakerule \
     && adduser -S -D -H -u 10001 -G snakerule snakerule \
-    && mkdir -p /data /run/pulse /opt/pulse/bin \
-    && chown -R 10001:10001 /data /run/pulse /opt/pulse
+    && mkdir -p /run/pulse /opt/pulse/bin \
+    && chown -R 10001:10001 /run/pulse /opt/pulse
 COPY --from=build --chown=10001:10001 /out/snakerule-server /usr/local/bin/snakerule-server
 COPY --from=build --chown=10001:10001 /out/pulse-agent /opt/pulse/bin/pulse-agent
 USER 10001:10001
-ENV SERVER_PORT=8081 SERVER_ENV=production LICENSE_STORE_PATH=/data/license.json PULSE_AGENT_BIN=/opt/pulse/bin/pulse-agent PULSE_AGENT_SOCKET=/run/pulse/agent.sock
 EXPOSE 8081
 ENTRYPOINT ["/usr/local/bin/snakerule-server"]

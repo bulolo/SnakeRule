@@ -20,17 +20,17 @@ type RulesetRepository interface {
 type PersistentRulesetRepository struct {
 	mu    sync.RWMutex
 	items map[string]map[string]domain.Ruleset
-	path  string
+	key   string
 }
 
 func newRulesetRepository() *PersistentRulesetRepository {
 	return &PersistentRulesetRepository{items: make(map[string]map[string]domain.Ruleset)}
 }
 
-func NewPersistentRulesetRepository(path string) (*PersistentRulesetRepository, error) {
+func NewPersistentRulesetRepository(key string) (*PersistentRulesetRepository, error) {
 	r := newRulesetRepository()
-	r.path = path
-	if err := loadPersistent(path, &r.items); err != nil {
+	r.key = key
+	if err := loadEntity(key, &r.items); err != nil {
 		return nil, err
 	}
 	if r.items == nil {
@@ -67,7 +67,7 @@ func (r *PersistentRulesetRepository) Save(ctx context.Context, item domain.Rule
 		r.items[scopeID] = make(map[string]domain.Ruleset)
 	}
 	r.items[scopeID][item.ID] = cloneRuleset(item)
-	return savePersistent(r.path, r.items)
+	return saveEntity(r.key, r.items)
 }
 func (r *PersistentRulesetRepository) Delete(ctx context.Context, id string) error {
 	r.mu.Lock()
@@ -77,14 +77,14 @@ func (r *PersistentRulesetRepository) Delete(ctx context.Context, id string) err
 		return ErrNotFound
 	}
 	delete(items, id)
-	return savePersistent(r.path, r.items)
+	return saveEntity(r.key, r.items)
 }
 
 func (r *PersistentRulesetRepository) DeleteProjectScope(organizationID, projectID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.items, organizationID+"/"+projectID)
-	return savePersistent(r.path, r.items)
+	return saveEntity(r.key, r.items)
 }
 
 func rulesetScopeID(ctx context.Context) string {

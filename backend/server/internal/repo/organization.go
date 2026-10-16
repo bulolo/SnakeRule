@@ -52,7 +52,7 @@ type OrganizationRepository interface {
 type PersistentOrganizationRepository struct {
 	mu    sync.RWMutex
 	items map[string]domain.Organization
-	path  string
+	key   string
 }
 
 func newOrganizationRepository() *PersistentOrganizationRepository {
@@ -62,22 +62,22 @@ func newOrganizationRepository() *PersistentOrganizationRepository {
 	}}
 }
 
-func NewPersistentOrganizationRepository(path string) (*PersistentOrganizationRepository, error) {
+func NewPersistentOrganizationRepository(key string) (*PersistentOrganizationRepository, error) {
 	r := newOrganizationRepository()
-	r.path = path
-	if err := loadPersistent(path, &r.items); err != nil {
+	r.key = key
+	if err := loadEntity(key, &r.items); err != nil {
 		return nil, err
 	}
 	if r.items == nil {
 		r = newOrganizationRepository()
-		r.path = path
+		r.key = key
 	}
 	if _, ok := r.items[DefaultOrganizationID]; !ok {
 		now := time.Now().UTC()
 		r.items[DefaultOrganizationID] = domain.Organization{ID: DefaultOrganizationID, Name: "默认组织", Slug: "default", Description: "SnakeRule 初始组织", CreatedAt: now, UpdatedAt: now}
 	}
 	// Persist seeded defaults too, so a brand-new database has a durable org.
-	if err := savePersistent(path, r.items); err != nil {
+	if err := saveEntity(key, r.items); err != nil {
 		return nil, err
 	}
 	return r, nil
@@ -116,7 +116,7 @@ func (r *PersistentOrganizationRepository) Save(_ context.Context, item domain.O
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.items[item.ID] = item
-	return savePersistent(r.path, r.items)
+	return saveEntity(r.key, r.items)
 }
 
 func (r *PersistentOrganizationRepository) Delete(_ context.Context, id string) error {
@@ -129,5 +129,5 @@ func (r *PersistentOrganizationRepository) Delete(_ context.Context, id string) 
 		return ErrNotFound
 	}
 	delete(r.items, id)
-	return savePersistent(r.path, r.items)
+	return saveEntity(r.key, r.items)
 }

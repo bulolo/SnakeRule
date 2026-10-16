@@ -9,7 +9,6 @@ import { SettingsDialog } from "./components/settings";
 import { Toaster, toast } from "sonner";
 import { ProjectsPanel, type Project } from "./components/projects";
 import {
-  readAPIResponse,
   snakeRuleApi,
   type Condition,
   type Decision,
@@ -30,10 +29,6 @@ const starter: Ruleset = {
 };
 
 const pretty = (value: unknown) => JSON.stringify(value, null, 2);
-async function readAPIJSON(response: Response, label: string): Promise<any> {
-  try { return await readAPIResponse(response); }
-  catch (error) { throw new Error(`${label}失败：${error instanceof Error ? error.message : "请求失败"}`); }
-}
 export function Workbench() {
   const [selected, setSelected] = useState<Ruleset>(starter);
   const [editor, setEditor] = useState(pretty(starter));
@@ -94,8 +89,7 @@ export function Workbench() {
   }, []);
 
   const refreshProjects = useCallback(async () => {
-    const response = await fetch("/api/v1/projects?is_pager=0");
-    const body = await readAPIJSON(response, "读取项目");
+    const body = await snakeRuleApi.listProjects();
     setProjects(body.list ?? []);
     setOpenProjectID(body.active_project_id ?? "");
   }, []);
@@ -124,31 +118,31 @@ export function Workbench() {
   const pagedOverviewLogs = sortedOverviewLogs.slice((globalLogPage - 1) * globalLogPageSize, globalLogPage * globalLogPageSize);
 
   const refreshAlertChannels = useCallback(async () => {
-    const response = await fetch(`/api/v1/organizations/${encodeURIComponent(activeOrganizationID)}/alert-channels?is_pager=0`);
-    const body = await readAPIJSON(response, "读取告警渠道");
+    const body = await snakeRuleApi.listOrganizationAlertChannels(activeOrganizationID);
     setAlertChannels((body.list ?? []).filter((item: { enabled: boolean }) => item.enabled));
   }, [activeOrganizationID]);
 
   const refreshNotifications = useCallback(async () => {
-    const response = await fetch("/api/v1/notifications?is_pager=0");
-    const body = await readAPIJSON(response, "读取通知");
+    const body = await snakeRuleApi.listNotifications();
     setNotifications(body.list ?? []);
   }, []);
 
   async function markNotificationsRead(id?: string) {
-    const endpoint = id ? `/api/v1/notifications/${encodeURIComponent(id)}/read` : "/api/v1/notifications/read-all";
-    const response = await fetch(endpoint, { method: "POST" });
-    if (!response.ok) { toast.error("更新通知状态失败"); return; }
-    await refreshNotifications();
+    try {
+      if (id) await snakeRuleApi.readNotification(id);
+      else await snakeRuleApi.readAllNotifications();
+      await refreshNotifications();
+    } catch (error) {
+      toast.error("更新通知状态失败", { description: error instanceof Error ? error.message : "请求失败" });
+    }
   }
 
   const refresh = useCallback(
     async (id?: string) => {
-      const [list, metaResponse] = await Promise.all([
+      const [list, meta] = await Promise.all([
         snakeRuleApi.listRulesets(),
-        fetch("/api/v1/meta"),
+        snakeRuleApi.getMeta(),
       ]);
-      const meta = await readAPIResponse<{ version: string }>(metaResponse);
       setVersion(meta.version ?? "0.0.2");
       const item =
         list.list.find((candidate) => candidate.id === (id ?? selected.id)) ??
@@ -257,15 +251,14 @@ export function Workbench() {
     if (!id || id === openProjectID) return;
     setBusy(true); setError("");
     try {
-      const response = await fetch("/api/v1/projects/active", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: id }) });
-      await readAPIResponse(response);
+      await snakeRuleApi.setActiveProject(id);
       setOpenProjectID(id); setDecision(null); setActiveRuleId(""); await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "切换项目失败"); }
     finally { setBusy(false); }
   }
   async function create(name = "新规则集"): Promise<Ruleset> {
     const item: Ruleset = { ...starter, id: `ruleset-${Date.now()}`, name };
-    return snakeRuleApi.saveRuleset(item);
+    return snakeRuleApi.createRuleset(item);
   }
   function updateRuleset(change: (value: Ruleset) => Ruleset) {
     try {
@@ -434,7 +427,7 @@ export function Workbench() {
       const value = JSON.parse(editor) as Ruleset;
       if (!value.id?.trim() || !value.name?.trim())
         throw new Error("规则集 ID 和名称不能为空");
-      const saved = await snakeRuleApi.saveRuleset(value);
+      const saved = await snakeRuleApi.updateRuleset(value);
       setSelected(saved);
       setEditor(pretty(saved));
       setNotice("规则集已保存");

@@ -7,11 +7,11 @@ import (
 	"github.com/szplanner/snakerule/internal/repo"
 )
 
-func loadOrCreateJWTSigningKey(path string) ([]byte, error) {
+func loadOrCreateJWTSigningKey() ([]byte, error) {
 	var stored struct {
 		Key []byte `json:"key"`
 	}
-	if err := repo.LoadPersistent(path, &stored); err != nil {
+	if err := repo.LoadEntity("jwt-signing-key", &stored); err != nil {
 		return nil, err
 	}
 	if len(stored.Key) > 0 {
@@ -24,7 +24,7 @@ func loadOrCreateJWTSigningKey(path string) ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, err
 	}
-	if err := repo.SavePersistent(path, struct {
+	if err := repo.SaveEntity("jwt-signing-key", struct {
 		Key []byte `json:"key"`
 	}{Key: key}); err != nil {
 		return nil, err

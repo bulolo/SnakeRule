@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { readAPIResponse, snakeRuleApi, type InvocationLog, type Rule, type RuleAlert, type Ruleset } from "../lib/sdk/generated";
+import { snakeRuleApi, type InvocationLog, type Rule, type RuleAlert, type Ruleset } from "../lib/sdk/generated";
 import { CustomSelect } from "./common";
 
 export type Project = {
@@ -44,11 +44,6 @@ function ProjectMembersPanel({ projectID }: { projectID: string }) {
     {error && <div className="login-error" role="alert">{error}</div>}
     {!members.length ? <div className="table-empty"><b>暂无项目成员</b><small>从当前组织的用户中添加项目成员。</small></div> : <div className="project-member-list">{members.map((member) => <article className="project-member-row" key={member.user.id}><div><b>{member.user.name}</b><small>{member.user.email}</small></div>{canManage ? <><CustomSelect ariaLabel={`${member.user.name} 的项目角色`} value={member.role} options={[{ value: "project_admin", label: "项目管理员" }, { value: "project_member", label: "项目成员" }]} onChange={(role) => void changeMember(member.user.id, "PUT", role)} /><button className="quiet workspace-delete" disabled={busy} onClick={() => void changeMember(member.user.id, "DELETE")}>移除</button></> : <span className="workspace-current-pill">{member.role === "project_admin" ? "项目管理员" : "项目成员"}</span>}</article>)}</div>}
   </section>;
-}
-
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...init, headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...init?.headers } });
-  return readAPIResponse<T>(response);
 }
 
 function effectiveRuleAlert(ruleset: Ruleset, rule: Rule): RuleAlert | undefined {
@@ -119,12 +114,12 @@ export function ProjectsPanel({
     if (!activeProject) return [];
     let loadedRulesets: Ruleset[] = [];
     try {
-      const result = await api<{ list: Ruleset[] }>("/api/v1/rulesets?is_pager=0");
+      const result = await snakeRuleApi.listRulesets();
       loadedRulesets = result.list ?? [];
       setRulesets(loadedRulesets);
     } catch (e) { toast.error("读取项目规则集失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     try {
-      const result = await api<{ list: APIKey[] }>(`/api/v1/projects/${activeProject.id}/credentials?is_pager=0`);
+      const result = await snakeRuleApi.listProjectCredentials(activeProject.id);
       setKeys(result.list ?? []);
     } catch (e) { toast.error("读取项目 API Key 失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     return loadedRulesets;
@@ -134,9 +129,9 @@ export function ProjectsPanel({
   async function createProject(template: "" | "ecommerce") {
     setBusy(true); setError("");
     try {
-      const result = await api<Project>("/api/v1/projects", { method: "POST", body: JSON.stringify({
+      const result = await snakeRuleApi.createProject({
         name: template ? "电商订单风控演示" : name.trim(), slug: slug.trim(), description: template ? "包含订单风控规则和项目 API Key 的完整演示项目。" : description.trim(), template,
-      }) });
+      });
       await onRefresh(); await onSelect(result.id);
       setName(""); setSlug(""); setDescription("");
       setProjectModalOpen(false); setProjectDetailOpen(true);
@@ -149,7 +144,7 @@ export function ProjectsPanel({
     if (!target) return;
     setBusy(true); setError("");
     try {
-      await api(`/api/v1/projects/${target.id}`, { method: "PUT", body: JSON.stringify({ name: editName.trim(), slug: editSlug.trim(), description: description.trim(), icon: editIcon }) });
+      await snakeRuleApi.updateProject(target.id, { name: editName.trim(), slug: editSlug.trim(), description: description.trim(), icon: editIcon });
       await onRefresh(); setEditingID(""); toast.success("项目资料已更新。");
     } catch (e) { toast.error("更新项目失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     finally { setBusy(false); }
@@ -158,14 +153,14 @@ export function ProjectsPanel({
     if (!activeProject) return;
     setBusy(true); setError(""); setNewSecret("");
     try {
-      const result = await api<{ item: APIKey; secret?: string; token?: string; signing_secret?: string }>(`/api/v1/projects/${activeProject.id}/credentials`, { method: "POST", body: JSON.stringify({ name: keyName.trim(), type: keyType, signing_key: keyType === "jwt" && jwtSigningKeyMode, expires_at: keyExpiresAt ? new Date(keyExpiresAt).toISOString() : undefined }) });
+      const result = await snakeRuleApi.createProjectCredential(activeProject.id, { name: keyName.trim(), type: keyType, signing_key: keyType === "jwt" && jwtSigningKeyMode, expires_at: keyExpiresAt ? new Date(keyExpiresAt).toISOString() : undefined });
       setNewCredentialKind(result.item.credential_kind ?? "api_key"); setNewCredentialID(result.item.id); setNewSecret(result.token ?? result.signing_secret ?? result.secret ?? ""); setKeyCreateMode(true); await refreshDetail();
     } catch (e) { toast.error(`创建${keyType === "jwt" ? " JWT" : " API Key"}失败`, { description: e instanceof Error ? e.message : "请求失败" }); }
     finally { setBusy(false); }
   }
   async function revokeKey(key: APIKey) {
     setBusy(true); setError("");
-    try { await api(`/api/v1/projects/${projectID}/credentials/${key.id}`, { method: "DELETE" }); await refreshDetail(); }
+    try { await snakeRuleApi.revokeProjectCredential(projectID, key.id); await refreshDetail(); }
     catch (e) { toast.error("撤销 API Key 失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     finally { setBusy(false); }
   }
@@ -185,7 +180,7 @@ export function ProjectsPanel({
   }
   async function removeProject(project: Project) {
     setBusy(true); setError("");
-    try { await api(`/api/v1/projects/${project.id}`, { method: "DELETE" }); setConfirmProjectDelete(""); await onRefresh(); setProjectDetailOpen(false); toast.success("项目已删除。"); }
+    try { await snakeRuleApi.deleteProject(project.id); setConfirmProjectDelete(""); await onRefresh(); setProjectDetailOpen(false); toast.success("项目已删除。"); }
     catch (e) { toast.error("删除项目失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     finally { setBusy(false); }
   }
@@ -193,9 +188,7 @@ export function ProjectsPanel({
     const key = `ruleset:${set.id}`;
     setToggleBusy(key); setError("");
     try {
-      await api(`/api/v1/rulesets/${encodeURIComponent(set.id)}`, {
-        method: "PUT", body: JSON.stringify({ ...set, enabled: !set.enabled }),
-      });
+      await snakeRuleApi.updateRuleset({ ...set, enabled: !set.enabled });
       await refreshDetail();
       toast.success(`规则集已${set.enabled ? "停用" : "启用"}`);
     } catch (e) { const message = e instanceof Error ? e.message : "更新规则集状态失败"; setError(message); toast.error("更新规则集状态失败", { description: message }); }
@@ -206,7 +199,7 @@ export function ProjectsPanel({
     setToggleBusy(key); setError("");
     try {
       const updated = { ...set, rules: set.rules.map((rule) => rule.id === ruleID ? { ...rule, enabled: !rule.enabled } : rule) };
-      await api(`/api/v1/rulesets/${encodeURIComponent(set.id)}`, { method: "PUT", body: JSON.stringify(updated) });
+      await snakeRuleApi.updateRuleset(updated);
       await refreshDetail();
       const rule = set.rules.find((item) => item.id === ruleID);
       toast.success(`规则已${rule?.enabled ? "停用" : "启用"}`);
@@ -228,7 +221,7 @@ export function ProjectsPanel({
         alert: defaultAlertEnabled ? { enabled: true, channel_ids: defaultAlertChannelIDs } : undefined,
         rules: alertRuleset.rules.map((rule) => applyDefaultToAll ? { ...rule, alert: undefined } : rule),
       };
-      await api(`/api/v1/rulesets/${encodeURIComponent(updated.id)}`, { method: "PUT", body: JSON.stringify(updated) });
+      await snakeRuleApi.updateRuleset(updated);
       await refreshDetail();
       setAlertRuleset(null);
       toast.success(applyDefaultToAll ? "默认通知已保存并应用到全部规则" : "规则集默认通知已保存");

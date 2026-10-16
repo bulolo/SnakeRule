@@ -44,19 +44,19 @@ func isProjectKeyRequest(ctx context.Context) bool {
 }
 
 type AuthConfig struct {
-	Email            string
-	Name             string
-	Password         string
-	SessionTTL       time.Duration
-	SessionStorePath string
-	JWTSigningKey    []byte
+	Email           string
+	Name            string
+	Password        string
+	SessionTTL      time.Duration
+	SessionStoreKey string
+	JWTSigningKey   []byte
 }
 
 type sessionStore struct {
 	mu       sync.Mutex
 	sessions map[string]session
 	ttl      time.Duration
-	path     string
+	key      string
 }
 
 type session struct {
@@ -69,14 +69,14 @@ type session struct {
 	OrganizationIDs []string  `json:"organization_ids,omitempty"`
 }
 
-func newSessionStore(ttl time.Duration, path string) *sessionStore {
-	s := &sessionStore{sessions: make(map[string]session), ttl: ttl, path: path}
-	_ = repo.LoadPersistent(path, &s.sessions)
+func newSessionStore(ttl time.Duration, key string) *sessionStore {
+	s := &sessionStore{sessions: make(map[string]session), ttl: ttl, key: key}
+	_ = repo.LoadEntity(key, &s.sessions)
 	return s
 }
 
 func (s *sessionStore) persist() error {
-	return repo.SavePersistent(s.path, s.sessions)
+	return repo.SaveEntity(s.key, s.sessions)
 }
 
 type projectJWTClaims struct {

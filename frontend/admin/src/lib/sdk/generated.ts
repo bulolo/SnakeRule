@@ -192,6 +192,7 @@ export interface RuleAlert {
 
 export interface Notification {
   id: string;
+  organization_id: string;
   title: string;
   message: string;
   project: string;
@@ -362,11 +363,13 @@ export const snakeRuleApi = {
   getPlatformSettings: () => request<PlatformSettings>('/api/v1/platform/settings'),
   updatePlatformSettings: (input: PlatformSettings) => request<PlatformSettings>('/api/v1/platform/settings', { method: 'PUT', body: JSON.stringify(input) }),
   getSession: () => request<SessionResponse>('/api/v1/auth/session'),
+  getMeta: () => request<{ version: string }>('/api/v1/meta'),
   login: (input: LoginRequest) => request<SessionResponse>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify(input) }),
   logout: () => request<{ authenticated: boolean }>('/api/v1/auth/logout', { method: 'POST' }),
   listRulesets: () => request<RulesetList>('/api/v1/rulesets?is_pager=0'),
   getRuleset: (id: string) => request<Ruleset>(`/api/v1/rulesets/${encodeURIComponent(id)}`),
-  saveRuleset: (ruleset: Ruleset) => request<Ruleset>(`/api/v1/rulesets/${encodeURIComponent(ruleset.id)}`, { method: 'PUT', body: JSON.stringify(ruleset) }),
+  createRuleset: (ruleset: Ruleset) => request<Ruleset>('/api/v1/rulesets', { method: 'POST', body: JSON.stringify(ruleset) }),
+  updateRuleset: (ruleset: Ruleset) => request<Ruleset>(`/api/v1/rulesets/${encodeURIComponent(ruleset.id)}`, { method: 'PUT', body: JSON.stringify(ruleset) }),
   deleteRuleset: (id: string) => request<void>(`/api/v1/rulesets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   evaluate: (input: EvaluateRequest, source?: 'designer') => request<Decision>('/api/v1/engine/evaluate', { method: 'POST', body: JSON.stringify(input), headers: source ? { 'X-SnakeRule-Source': source } : undefined }),
   listProjectInvocations: (id: string, query: InvocationListQuery = {}) => { const params = new URLSearchParams(); for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value)); return request<InvocationListResponse>(`/api/v1/projects/${encodeURIComponent(id)}/invocations?${params.toString()}`); },
@@ -375,6 +378,10 @@ export const snakeRuleApi = {
   clearLicense: () => request<LicenseStatus>('/api/v1/platform/license', { method: 'DELETE' }),
   listOrganizations: () => request<OrganizationList>('/api/v1/organizations?is_pager=0'),
   listProjects: () => request<ProjectList>('/api/v1/projects?is_pager=0'),
+  createProject: (input: ProjectInput) => request<Project>('/api/v1/projects', { method: 'POST', body: JSON.stringify(input) }),
+  updateProject: (id: string, input: ProjectInput) => request<Project>(`/api/v1/projects/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }),
+  deleteProject: (id: string) => request<void>(`/api/v1/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  setActiveProject: (project_id: string) => request<ActiveProjectResponse>('/api/v1/projects/active', { method: 'PUT', body: JSON.stringify({ project_id }) }),
   createOrganization: (input: OrganizationInput) => request<Organization>('/api/v1/organizations', { method: 'POST', body: JSON.stringify(input) }),
   updateOrganization: (id: string, input: OrganizationInput) => request<Organization>(`/api/v1/organizations/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }),
   deleteOrganization: (id: string) => request<void>(`/api/v1/organizations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
@@ -391,7 +398,11 @@ export const snakeRuleApi = {
   listProjectMembers: (id: string) => request<ProjectMemberList>(`/api/v1/projects/${encodeURIComponent(id)}/members?is_pager=0`),
   listProjectMemberCandidates: (id: string) => request<UserList>(`/api/v1/projects/${encodeURIComponent(id)}/member-candidates?is_pager=0`),
   listProjectCredentials: (id: string) => request<ProjectKeyList>(`/api/v1/projects/${encodeURIComponent(id)}/credentials?is_pager=0`),
+  createProjectCredential: (id: string, input: CreateProjectKeyInput) => request<{ item: ProjectKey; secret?: string; token?: string; signing_secret?: string }>(`/api/v1/projects/${encodeURIComponent(id)}/credentials`, { method: 'POST', body: JSON.stringify(input) }),
+  revokeProjectCredential: (id: string, keyId: string) => request<void>(`/api/v1/projects/${encodeURIComponent(id)}/credentials/${encodeURIComponent(keyId)}`, { method: 'DELETE' }),
   listNotifications: () => request<NotificationList>('/api/v1/notifications?is_pager=0'),
+  readNotification: (id: string) => request<{ read: boolean }>(`/api/v1/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' }),
+  readAllNotifications: () => request<{ read: boolean }>('/api/v1/notifications/read-all', { method: 'POST' }),
   addProjectMember: (id: string, input: ProjectMemberInput) => request<{ user: ProjectMemberUser; role: string }>(`/api/v1/projects/${encodeURIComponent(id)}/members`, { method: 'POST', body: JSON.stringify(input) }),
   updateProjectMember: (id: string, userId: string, role: 'project_admin' | 'project_member') => request<void>(`/api/v1/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'PUT', body: JSON.stringify({ role }) }),
   removeProjectMember: (id: string, userId: string) => request<void>(`/api/v1/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' }),

@@ -8,10 +8,7 @@ services:
       - ./deploy/.env.prod
     environment:
       SERVER_ENV: production
-      LICENSE_STORE_PATH: /data/license.json
       DATABASE_URL: postgres://snakerule:${POSTGRES_PASSWORD}@database:5432/snakerule?sslmode=disable
-    volumes:
-      - snakerule_prod_data:/data
     tmpfs:
       - /run/pulse:mode=0750,uid=10001,gid=10001
     expose:
@@ -96,5 +93,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  snakerule_prod_data:
   snakerule_postgres:

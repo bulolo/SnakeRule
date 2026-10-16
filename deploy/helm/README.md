@@ -23,7 +23,7 @@ database:
 
 The database password is used in the backend connection URL and should use URL-safe characters. If `backend.existingSecret` is set, that Secret must contain `AUTH_PASSWORD`, `LICENSE_ENCRYPTION_KEY`, `JWT_SECRET`, and `POSTGRES_PASSWORD`; include `PULSE_PRODUCT_PUBLIC_KEY` when licensing uploads are enabled.
 
-PostgreSQL state is kept in its own PVC. The API's `/data` PVC is retained for importing older JSON state. Back up the database PVC regularly and keep the license encryption key unchanged across upgrades.
+PostgreSQL is the only persistent application data store and its state is kept in its own PVC. Back up the database PVC regularly and keep the license encryption key unchanged across upgrades.
 
 ## Install and upgrade
 

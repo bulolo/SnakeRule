@@ -23,9 +23,9 @@ See [openapi.json](./openapi.json) for paths, schemas, authentication, paginatio
 
 ## Persistence and migrations
 
-PostgreSQL stores organizations, users, projects, memberships, rulesets, credentials, alert channels, notifications, invocation logs, sessions, platform settings, and license state. Goose migrations live in `internal/repo/migrations` and run at service startup. Migration versions are recorded in `snakerule_goose_db_version`.
+PostgreSQL stores organizations, users, projects, memberships, rulesets, credentials, alert channels, organization-scoped notifications, invocation logs, sessions, platform settings, and license state. Goose migrations live in `internal/repo/migrations` and run at service startup. Migration versions are recorded in `snakerule_goose_db_version`.
 
-The repository currently keeps a process-local cache and writes changes to PostgreSQL transactionally. Run a single API replica. The initial schema is defined in `00001_initial_schema.sql`.
+The repository currently keeps a process-local cache and writes changes to PostgreSQL transactionally. Run a single API replica. The initial schema is defined in `00001_initial_schema.sql`; later releases add ordered migrations without rewriting applied migrations.
 
 ## Source layout
 

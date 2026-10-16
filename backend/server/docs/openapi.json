@@ -5852,6 +5852,7 @@
         "type": "object",
         "required": [
           "id",
+          "organization_id",
           "title",
           "message",
           "project",
@@ -5861,6 +5862,9 @@
         ],
         "properties": {
           "id": {
+            "type": "string"
+          },
+          "organization_id": {
             "type": "string"
           },
           "title": {

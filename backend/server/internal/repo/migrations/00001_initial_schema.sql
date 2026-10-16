@@ -75,6 +75,7 @@ CREATE TABLE alert_channels (
 
 CREATE TABLE notifications (
     id TEXT PRIMARY KEY,
+    organization_id TEXT NOT NULL DEFAULT 'default',
     title TEXT NOT NULL,
     message TEXT NOT NULL,
     read BOOLEAN NOT NULL DEFAULT FALSE,
@@ -114,6 +115,7 @@ CREATE TABLE jwt_signing_keys (id SMALLINT PRIMARY KEY CHECK (id = 1), document 
 
 CREATE INDEX invocation_logs_org_created_idx ON invocation_logs (organization_id, created_at DESC);
 CREATE INDEX invocation_logs_project_created_idx ON invocation_logs (organization_id, project_id, created_at DESC);
+CREATE INDEX notifications_organization_created_idx ON notifications (organization_id, created_at DESC);
 
 -- +goose Down
 DROP TABLE jwt_signing_keys;

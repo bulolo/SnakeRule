@@ -17,7 +17,7 @@ import (
 
 type PersistentUserRepository struct {
 	mu    sync.RWMutex
-	path  string
+	key   string
 	items map[string]domain.User
 }
 type persistedUser struct {
@@ -26,10 +26,10 @@ type persistedUser struct {
 	Salt string `json:"password_salt"`
 }
 
-func NewPersistentUserRepository(path string) (*PersistentUserRepository, error) {
-	r := &PersistentUserRepository{path: path, items: map[string]domain.User{}}
+func NewPersistentUserRepository(key string) (*PersistentUserRepository, error) {
+	r := &PersistentUserRepository{key: key, items: map[string]domain.User{}}
 	var stored map[string]persistedUser
-	if err := loadPersistent(path, &stored); err != nil {
+	if err := loadEntity(key, &stored); err != nil {
 		return nil, err
 	}
 	for id, p := range stored {
@@ -62,7 +62,7 @@ func (r *PersistentUserRepository) persist() error {
 	for id, u := range r.items {
 		stored[id] = persistedUser{User: u, Hash: u.PasswordHash, Salt: u.PasswordSalt}
 	}
-	return savePersistent(r.path, stored)
+	return saveEntity(r.key, stored)
 }
 func (r *PersistentUserRepository) SeedSuperAdmin(email, name, password string) error {
 	email = strings.ToLower(strings.TrimSpace(email))

@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -71,61 +69,40 @@ func runMigrations(db *sql.DB) error {
 	return nil
 }
 
-func LoadPersistent(path string, target any) error { return loadPersistent(path, target) }
-func SavePersistent(path string, value any) error  { return savePersistent(path, value) }
+func LoadEntity(key string, target any) error { return loadEntity(key, target) }
+func SaveEntity(key string, value any) error  { return saveEntity(key, value) }
 
-func loadPersistent(path string, target any) error {
-	if path == "" {
-		return nil
+func loadEntity(key string, target any) error {
+	db := currentDatabase()
+	if db == nil {
+		return errors.New("PostgreSQL must be initialized before loading data")
 	}
-	if db := currentDatabase(); db != nil {
-		data, found, err := readEntityBucket(db, filepath.Base(path))
-		if err != nil {
-			return err
-		}
-		if !found {
-			return nil
-		}
-		return json.Unmarshal(data, target)
-	}
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
+	data, found, err := readEntity(db, key)
 	if err != nil {
 		return err
 	}
-	if len(data) == 0 {
+	if !found {
 		return nil
 	}
 	return json.Unmarshal(data, target)
 }
 
-func savePersistent(path string, value any) error {
-	if path == "" {
-		return nil
+func saveEntity(key string, value any) error {
+	db := currentDatabase()
+	if db == nil {
+		return errors.New("PostgreSQL must be initialized before saving data")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(value, "", "  ")
+	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	if db := currentDatabase(); db != nil {
-		tx, err := db.Begin()
-		if err != nil {
-			return err
-		}
-		if err = syncEntityBucket(tx, filepath.Base(path), string(data)); err != nil {
-			_ = tx.Rollback()
-			return err
-		}
-		return tx.Commit()
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
+	tx, err := db.Begin()
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err = syncEntity(tx, key, string(data)); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -426,7 +427,7 @@ func (s *Server) dispatchProjectAlert(ctx context.Context, decision domain.Decis
 					title = "设计器模拟命中"
 					message = "【模拟】" + message
 				}
-				_ = s.notifications.Add(domain.Notification{Title: title, Message: message, Project: project.Name, Ruleset: decision.RulesetID, CreatedAt: time.Now().UTC()})
+				_ = s.notifications.Add(domain.Notification{OrganizationID: repo.OrganizationIDFrom(ctx), Title: title, Message: message, Project: project.Name, Ruleset: decision.RulesetID, CreatedAt: time.Now().UTC()})
 			}
 			continue
 		}
@@ -442,39 +443,11 @@ func (s *Server) dispatchProjectAlert(ctx context.Context, decision domain.Decis
 }
 
 func sendDecisionNotification(channel domain.AlertChannel, message string) error {
-	body, err := alertPayload(channel.Type, message)
-	if err != nil {
-		return err
-	}
-	target := channel.URL
-	if channel.Type == "dingtalk" && channel.Secret != "" {
-		timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
-		mac := hmac.New(sha256.New, []byte(channel.Secret))
-		_, _ = mac.Write([]byte(timestamp + "\n" + channel.Secret))
-		parsed, _ := url.Parse(target)
-		query := parsed.Query()
-		query.Set("timestamp", timestamp)
-		query.Set("sign", base64.StdEncoding.EncodeToString(mac.Sum(nil)))
-		parsed.RawQuery = query.Encode()
-		target = parsed.String()
-	}
-	if channel.Type == "feishu" && channel.Secret != "" {
-		var payload map[string]any
-		_ = json.Unmarshal(body, &payload)
-		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-		mac := hmac.New(sha256.New, []byte(timestamp+"\n"+channel.Secret))
-		payload["timestamp"], payload["sign"] = timestamp, base64.StdEncoding.EncodeToString(mac.Sum(nil))
-		body, _ = json.Marshal(payload)
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(string(body)))
+	req, err := newAlertRequest(ctx, channel, message)
 	if err != nil {
 		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if channel.Type == "webhook" && channel.Secret != "" {
-		req.Header.Set("Authorization", "Bearer "+channel.Secret)
 	}
 	client := &http.Client{Timeout: 4 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	res, err := client.Do(req)
@@ -486,4 +459,48 @@ func sendDecisionNotification(channel domain.AlertChannel, message string) error
 		return fmt.Errorf("destination returned HTTP %d", res.StatusCode)
 	}
 	return nil
+}
+
+func newAlertRequest(ctx context.Context, channel domain.AlertChannel, message string) (*http.Request, error) {
+	body, err := alertPayload(channel.Type, message)
+	if err != nil {
+		return nil, err
+	}
+	target := channel.URL
+	if channel.Type == "dingtalk" && channel.Secret != "" {
+		timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
+		mac := hmac.New(sha256.New, []byte(channel.Secret))
+		_, _ = mac.Write([]byte(timestamp + "\n" + channel.Secret))
+		parsed, err := url.Parse(target)
+		if err != nil {
+			return nil, err
+		}
+		query := parsed.Query()
+		query.Set("timestamp", timestamp)
+		query.Set("sign", base64.StdEncoding.EncodeToString(mac.Sum(nil)))
+		parsed.RawQuery = query.Encode()
+		target = parsed.String()
+	}
+	if channel.Type == "feishu" && channel.Secret != "" {
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return nil, err
+		}
+		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+		mac := hmac.New(sha256.New, []byte(timestamp+"\n"+channel.Secret))
+		payload["timestamp"], payload["sign"] = timestamp, base64.StdEncoding.EncodeToString(mac.Sum(nil))
+		body, err = json.Marshal(payload)
+		if err != nil {
+			return nil, err
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if channel.Type == "webhook" && channel.Secret != "" {
+		req.Header.Set("Authorization", "Bearer "+channel.Secret)
+	}
+	return req, nil
 }
