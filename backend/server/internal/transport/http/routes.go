@@ -26,6 +26,7 @@ func (s *Server) Handler() http.Handler {
 	apiMux.Handle("GET /api/v1/platform/license", s.requireSuperAdmin(http.HandlerFunc(s.getLicense)))
 	apiMux.Handle("POST /api/v1/platform/license", s.requireSuperAdmin(http.HandlerFunc(s.uploadLicense)))
 	apiMux.Handle("DELETE /api/v1/platform/license", s.requireSuperAdmin(http.HandlerFunc(s.clearLicense)))
+	apiMux.Handle("GET /api/v1/platform/system-info", s.requireSuperAdmin(http.HandlerFunc(s.getSystemInfo)))
 	// Brand settings are public presentation data so the login screen can render them.
 	apiMux.HandleFunc("GET /api/v1/platform/settings", s.getPlatformSettings)
 	apiMux.Handle("PUT /api/v1/platform/settings", s.requireSuperAdmin(http.HandlerFunc(s.updatePlatformSettings)))

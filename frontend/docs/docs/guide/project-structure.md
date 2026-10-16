@@ -19,4 +19,4 @@ SnakeRule/
 
 API 路由、业务服务、规则领域对象和求值器位于 `backend/server/internal`。管理端通过 OpenAPI 生成的 TypeScript SDK 调用 API。开发和生产 Compose 均由 Nginx 统一入口：`/api/v1/` 转发到后端，`/docs/` 转发到文档站点，根路径转发到管理端。Kubernetes Chart 位于 `deploy/helm`，仅部署 API、管理端和 Nginx，不创建独立 Gateway 服务。
 
-阅读仓库中的[架构说明](https://github.com/bulolo/SnakeRule/blob/0.0.2/docs/architecture.md)了解当前模块边界、数据生命周期和后续演进方向。
+阅读仓库 `docs/architecture.md` 了解当前模块边界、数据生命周期和后续演进方向。

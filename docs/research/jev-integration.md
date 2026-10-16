@@ -5,7 +5,7 @@
 
 ## 当前状态
 
-`backend/.env.example` 中曾包含 Jev 相关预留配置，但当前求值器不会读取这些配置，也没有 AI HTTP 客户端、Fact Resolver、缓存或降级实现。规则中写入 `jev.*` 只会被当作普通 fact 路径处理。
+配置结构和 `backend/.env.example` 保留了 Jev 参数占位，但当前求值器没有读取它们，也没有 AI HTTP 客户端、Fact Resolver、缓存或降级实现。规则中写入 `jev.*` 只会被当作普通 fact 路径处理。
 
 因此 README、管理端和 API 文档不应把 AI 决策描述为当前可用功能。
 

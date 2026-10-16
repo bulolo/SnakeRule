@@ -2,9 +2,9 @@
 
 # 🐍 SnakeRule
 
-**可视化规则管理与确定性决策引擎**
+**规则与 AI 协同决策平台**
 
-通过规则集描述业务判断，在管理工作台中编辑、验证并试运行决策。
+以规则和 AI 共同支持业务决策。当前版本提供可视化规则管理与确定性规则求值，并为后续 AI 决策能力保留清晰的扩展边界。
 
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
 [![React](https://img.shields.io/badge/React-18-149ECA?logo=react)](https://react.dev/)
@@ -20,11 +20,11 @@
 
 ---
 
-## 🚀 最近更新
+## 🚀 当前版本
 
 ### v0.0.2 · 管理工作台与规则引擎基础版
 
-- 🧭 **工作台概览**：展示求值趋势、命中与失败统计，以及跨项目的最近调用日志。
+- 🧭 **工作台概览**：展示求值趋势、命中与失败统计，以及最近调用日志。
 - 🧩 **规则集管理**：创建、编辑、筛选和删除规则集；支持拖拽式规则画布与 JSON 编辑。
 - 🧪 **决策试运行**：使用输入 facts 预览已保存规则或编辑中的草稿，草稿预览不会写入规则存储。
 - 🗂️ **组织**：支持切换与管理；创建时可指定初始组织管理员。
@@ -61,7 +61,7 @@
 
 ---
 
-## ✨ 核心特性
+## ✨ 产品能力
 
 ### 🎛️ 管理工作台
 
@@ -74,6 +74,8 @@
 - **平台设置**：查看产品运行信息与授权状态；管理组织，并可在创建时分配初始管理员。
 - **组织设置**：管理当前组织的用户和告警渠道；平台设置仅超级管理员可访问。
 - **账号菜单**：查看当前管理员并从右上角退出登录。
+
+> AI 决策是产品方向，不代表当前版本已连接模型服务。v0.0.2 的规则求值不调用外部 AI API；接入计划和数据边界见 [AI 决策扩展预研](./docs/research/jev-integration.md)。
 
 ### ⚙️ 规则引擎
 
@@ -177,7 +179,7 @@ Nginx :8080 ── /docs/ ──► VitePress 文档站点
 - **HTTP 服务**：Go 标准库 `net/http` 和 `ServeMux`
 - **规则模型**：Go 领域类型与 JSON 条件 DSL
 - **服务组织**：bootstrap、HTTP transport、service、repository、domain 分层
-- **数据存储**：业务状态按实体写入 PostgreSQL 表；仓储在进程内缓存，因此当前部署使用单个 API 实例。
+- **数据存储**：业务数据持久化到 PostgreSQL；当前仓储同时使用进程内缓存，因此部署使用单个 API 实例。
 - **平台授权**：通过 Pulse Agent 校验授权；授权密文单独保存在服务端配置的数据路径。
 
 ### 前端与文档
@@ -279,6 +281,7 @@ make dev-up
 | `make dev-status` | 查看容器状态及管理端、文档和 API 健康状态。 |
 | `make dev-logs` | 跟踪开发服务日志；也可用 `make dev-logs-backend` 等按服务查看。 |
 | `make dev-down` | 停止并移除开发容器；不删除命名数据卷。 |
+| `make dev-clean` | 删除开发容器、本地镜像和数据卷；会清空本地开发数据。 |
 | `make prod-init` | 生成本地生产配置和随机管理员密码、授权加密密钥。 |
 | `make prod-build` | 构建生产镜像。 |
 | `make prod-up` / `make prod-down` | 启动或停止生产 Compose。 |
@@ -341,19 +344,17 @@ A：业务数据使用 PostgreSQL 实体表并限制单 API 副本，避免进�
 
 ---
 
-## 📄 许可证
+## 📄 许可证与商业使用
 
-SnakeRule 使用[社区许可证](./LICENSE)：以 Apache License 2.0 为基础，并附加 SnakeRule 品牌保留和未经授权不得提供商业多租户 SaaS 服务的限制。
+SnakeRule 使用基于 Apache License 2.0 并附加 SnakeRule 条款的[社区许可证](./LICENSE)：
 
-因此该文件不是未经修改的标准 Apache-2.0 许可证，不能仅用 SPDX 标识 `Apache-2.0` 描述。个人使用、内部部署和单租户集成的具体条件，以及商业多租户服务的授权要求，以 [LICENSE](./LICENSE) 全文为准。商业授权咨询请通过 [GitHub Issues](https://github.com/bulolo/SnakeRule/issues) 联系维护者。
+- **个人与内部使用**：可按许可证用于个人用途、企业内部部署和单租户业务集成。
+- **品牌**：使用和分发时须保留 SnakeRule 品牌标识。
+- **商业 SaaS**：未经书面授权，不得基于本项目提供商业多租户规则引擎服务。
+
+商业授权请通过 [GitHub Issues](https://github.com/bulolo/SnakeRule/issues) 联系维护者。完整条款见 [LICENSE](./LICENSE)。
 
 ---
-
-## 🌱 生态项目
-
-- [OwlApi](https://github.com/bulolo/owlapi) — SQL to API 智能网关。
-- [RayFlow](https://github.com/bulolo/RayFlow) — 流程编排项目。
-- [CatWiki](https://github.com/bulolo/CatWiki) — 知识管理项目。
 
 <div align="center">
 

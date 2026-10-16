@@ -134,19 +134,18 @@ func readEntity(db *sql.DB, key string) ([]byte, bool, error) {
 		}
 		if key == "notifications" || key == "invocations" {
 			records = append(records, append(json.RawMessage(nil), raw...))
-		} else if key == "projects" || key == "rulesets" {
+		} else if key == "projects" {
 			if _, ok := object[organizationID]; !ok {
 				object[organizationID] = make(map[string]any)
 			}
 			org := object[organizationID].(map[string]any)
-			if key == "rulesets" {
-				if _, ok := org[projectID]; !ok {
-					org[projectID] = make(map[string]any)
-				}
-				org[projectID].(map[string]any)[id] = json.RawMessage(raw)
-			} else {
-				org[id] = json.RawMessage(raw)
+			org[id] = json.RawMessage(raw)
+		} else if key == "rulesets" {
+			scopeID := organizationID + "/" + projectID
+			if _, ok := object[scopeID]; !ok {
+				object[scopeID] = make(map[string]any)
 			}
+			object[scopeID].(map[string]any)[id] = json.RawMessage(raw)
 		} else if key == "platform-settings" || key == "license" || key == "jwt-signing-key" {
 			return raw, true, nil
 		} else {

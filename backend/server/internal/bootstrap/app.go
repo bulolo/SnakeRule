@@ -118,6 +118,7 @@ func New() (*App, error) {
 	engine := service.NewEngine(store)
 	handler := httpapi.NewServer(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL, SessionStoreKey: "sessions", JWTSigningKey: jwtSigningKey}, licenseManager, organizations)
 	handler.SetAlertChannelRepository(alertChannelStore)
+	handler.SetRuntimeInfo(db, cfg.Server.Env)
 	handler.SetPlatformSettingsRepository(platformSettingsStore)
 	handler.SetNotificationRepository(notificationStore)
 	handler.SetInvocationLogRepository(invocationLogStore)

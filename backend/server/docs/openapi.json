@@ -5190,6 +5190,69 @@
           }
         ]
       }
+    },
+    "/api/v1/platform/system-info": {
+      "get": {
+        "operationId": "getPlatformSystemInfo",
+        "responses": {
+          "200": {
+            "description": "Platform runtime and dependency status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "msg",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer",
+                      "const": 0
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SystemInfo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get platform system information",
+        "tags": [
+          "Platform"
+        ],
+        "security": [
+          {
+            "SessionCookie": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -6395,6 +6458,40 @@
           },
           "pagination": {
             "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "SystemInfo": {
+        "type": "object",
+        "required": [
+          "version",
+          "environment",
+          "database"
+        ],
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "database": {
+            "$ref": "#/components/schemas/DatabaseStatus"
+          }
+        }
+      },
+      "DatabaseStatus": {
+        "type": "object",
+        "required": [
+          "backend",
+          "connected"
+        ],
+        "properties": {
+          "backend": {
+            "type": "string"
+          },
+          "connected": {
+            "type": "boolean"
           }
         }
       }

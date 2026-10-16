@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -27,6 +28,13 @@ type Server struct {
 	notifications    *repo.PersistentNotificationRepository
 	invocationLogs   *repo.PersistentInvocationLogRepository
 	jwtSigningKey    []byte
+	database         *sql.DB
+	environment      string
+}
+
+func (s *Server) SetRuntimeInfo(database *sql.DB, environment string) {
+	s.database = database
+	s.environment = environment
 }
 
 func NewServer(rulesets *service.RulesetService, engine *service.Engine, logger *slog.Logger, auth AuthConfig, license *licensing.Manager, organizations *service.OrganizationService) *Server {

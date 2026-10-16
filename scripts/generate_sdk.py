@@ -85,6 +85,7 @@ def main() -> int:
         "  evaluate: (input: EvaluateRequest, source?: 'designer') => request<Decision>('/api/v1/engine/evaluate', { method: 'POST', body: JSON.stringify(input), headers: source ? { 'X-SnakeRule-Source': source } : undefined }),",
         "  listProjectInvocations: (id: string, query: InvocationListQuery = {}) => { const params = new URLSearchParams(); for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value)); return request<InvocationListResponse>(`/api/v1/projects/${encodeURIComponent(id)}/invocations?${params.toString()}`); },",
         "  getLicense: () => request<LicenseStatus>('/api/v1/platform/license'),",
+        "  getSystemInfo: () => request<SystemInfo>('/api/v1/platform/system-info'),",
         "  uploadLicense: (file: File) => { const form = new FormData(); form.append('file', file); return request<LicenseStatus>('/api/v1/platform/license', { method: 'POST', body: form }); },",
         "  clearLicense: () => request<LicenseStatus>('/api/v1/platform/license', { method: 'DELETE' }),",
         "  listOrganizations: () => request<OrganizationList>('/api/v1/organizations?is_pager=0'),",

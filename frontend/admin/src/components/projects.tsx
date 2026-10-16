@@ -88,7 +88,6 @@ export function ProjectsPanel({
   const [newSecret, setNewSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [toggleBusy, setToggleBusy] = useState("");
-  const [, setError] = useState("");
   const [confirmProjectDelete, setConfirmProjectDelete] = useState("");
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectTemplate, setProjectTemplate] = useState<"" | "ecommerce">("");
@@ -109,7 +108,16 @@ export function ProjectsPanel({
   const previousOrganizationID = useRef(activeOrganizationID);
   useEffect(() => { localStorage.setItem("snakerule:ruleset-nav-width", String(rulesetNavWidth)); }, [rulesetNavWidth]);
   useEffect(() => { if (previousOrganizationID.current !== activeOrganizationID) { previousOrganizationID.current = activeOrganizationID; setProjectDetailOpen(false); } }, [activeOrganizationID, setProjectDetailOpen]);
-  useEffect(() => { setActiveRulesetTab("rules"); setInvocationLogs([]); setInvocationLogsTotal(0); setSelectedInvocation(null); }, [activeProject?.id]);
+  useEffect(() => {
+    setRulesets([]);
+    setKeys([]);
+    setSelectedRulesetID("");
+    setProjectTab("rules");
+    setActiveRulesetTab("rules");
+    setInvocationLogs([]);
+    setInvocationLogsTotal(0);
+    setSelectedInvocation(null);
+  }, [activeProject?.id]);
   const refreshDetail = useCallback(async (): Promise<Ruleset[]> => {
     if (!activeProject) return [];
     let loadedRulesets: Ruleset[] = [];
@@ -127,7 +135,7 @@ export function ProjectsPanel({
   useEffect(() => { void refreshDetail(); }, [refreshDetail]);
 
   async function createProject(template: "" | "ecommerce") {
-    setBusy(true); setError("");
+    setBusy(true);
     try {
       const result = await snakeRuleApi.createProject({
         name: template ? "电商订单风控演示" : name.trim(), slug: slug.trim(), description: template ? "包含订单风控规则和项目 API Key 的完整演示项目。" : description.trim(), template,
@@ -142,7 +150,7 @@ export function ProjectsPanel({
   async function saveProject() {
     const target = projects.find((project) => project.id === editingID);
     if (!target) return;
-    setBusy(true); setError("");
+    setBusy(true);
     try {
       await snakeRuleApi.updateProject(target.id, { name: editName.trim(), slug: editSlug.trim(), description: description.trim(), icon: editIcon });
       await onRefresh(); setEditingID(""); toast.success("项目资料已更新。");
@@ -151,7 +159,7 @@ export function ProjectsPanel({
   }
   async function createKey() {
     if (!activeProject) return;
-    setBusy(true); setError(""); setNewSecret("");
+    setBusy(true); setNewSecret("");
     try {
       const result = await snakeRuleApi.createProjectCredential(activeProject.id, { name: keyName.trim(), type: keyType, signing_key: keyType === "jwt" && jwtSigningKeyMode, expires_at: keyExpiresAt ? new Date(keyExpiresAt).toISOString() : undefined });
       setNewCredentialKind(result.item.credential_kind ?? "api_key"); setNewCredentialID(result.item.id); setNewSecret(result.token ?? result.signing_secret ?? result.secret ?? ""); setKeyCreateMode(true); await refreshDetail();
@@ -159,7 +167,7 @@ export function ProjectsPanel({
     finally { setBusy(false); }
   }
   async function revokeKey(key: APIKey) {
-    setBusy(true); setError("");
+    setBusy(true);
     try { await snakeRuleApi.revokeProjectCredential(projectID, key.id); await refreshDetail(); }
     catch (e) { toast.error("撤销 API Key 失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     finally { setBusy(false); }
@@ -179,31 +187,31 @@ export function ProjectsPanel({
     } finally { setInvocationLogsBusy(false); }
   }
   async function removeProject(project: Project) {
-    setBusy(true); setError("");
+    setBusy(true);
     try { await snakeRuleApi.deleteProject(project.id); setConfirmProjectDelete(""); await onRefresh(); setProjectDetailOpen(false); toast.success("项目已删除。"); }
     catch (e) { toast.error("删除项目失败", { description: e instanceof Error ? e.message : "请求失败" }); }
     finally { setBusy(false); }
   }
   async function toggleRuleset(set: Ruleset) {
     const key = `ruleset:${set.id}`;
-    setToggleBusy(key); setError("");
+    setToggleBusy(key);
     try {
       await snakeRuleApi.updateRuleset({ ...set, enabled: !set.enabled });
       await refreshDetail();
       toast.success(`规则集已${set.enabled ? "停用" : "启用"}`);
-    } catch (e) { const message = e instanceof Error ? e.message : "更新规则集状态失败"; setError(message); toast.error("更新规则集状态失败", { description: message }); }
+    } catch (e) { const message = e instanceof Error ? e.message : "更新规则集状态失败"; toast.error("更新规则集状态失败", { description: message }); }
     finally { setToggleBusy(""); }
   }
   async function toggleRule(set: Ruleset, ruleID: string) {
     const key = `rule:${set.id}:${ruleID}`;
-    setToggleBusy(key); setError("");
+    setToggleBusy(key);
     try {
       const updated = { ...set, rules: set.rules.map((rule) => rule.id === ruleID ? { ...rule, enabled: !rule.enabled } : rule) };
       await snakeRuleApi.updateRuleset(updated);
       await refreshDetail();
       const rule = set.rules.find((item) => item.id === ruleID);
       toast.success(`规则已${rule?.enabled ? "停用" : "启用"}`);
-    } catch (e) { const message = e instanceof Error ? e.message : "更新规则状态失败"; setError(message); toast.error("更新规则状态失败", { description: message }); }
+    } catch (e) { const message = e instanceof Error ? e.message : "更新规则状态失败"; toast.error("更新规则状态失败", { description: message }); }
     finally { setToggleBusy(""); }
   }
   function openRulesetAlert(set: Ruleset) {
@@ -214,7 +222,7 @@ export function ProjectsPanel({
   }
   async function saveRulesetAlert() {
     if (!alertRuleset) return;
-    setBusy(true); setError("");
+    setBusy(true);
     try {
       const updated: Ruleset = {
         ...alertRuleset,
@@ -227,7 +235,7 @@ export function ProjectsPanel({
       toast.success(applyDefaultToAll ? "默认通知已保存并应用到全部规则" : "规则集默认通知已保存");
     } catch (e) {
       const message = e instanceof Error ? e.message : "保存规则集通知失败";
-      setError(message); toast.error("保存规则集通知失败", { description: message });
+      toast.error("保存规则集通知失败", { description: message });
     } finally { setBusy(false); }
   }
   async function createRuleset() {
@@ -258,13 +266,38 @@ export function ProjectsPanel({
     catch { toast.error("复制失败", { description: "请检查浏览器剪贴板权限。" }); }
   }
   return <>
-    <section className={`title-row project-page-heading ${projectDetailOpen ? "is-detail" : ""}`}><div><small className="eyebrow">PROJECTS</small><h1>{projectDetailOpen && activeProject ? activeProject.name : "项目"}</h1><p>{projectDetailOpen ? (activeProject?.description || `项目标识：${activeProject?.slug ?? ""}`) : "组织内的项目列表。选择项目查看规则集并管理项目配置。"}</p></div>{!projectDetailOpen && projects.length > 0 && <div className="project-title-actions"><button className="secondary" disabled={busy} onClick={() => { setProjectTemplate("ecommerce"); setProjectModalOpen(true); }}>创建演示项目</button><button className="primary" onClick={() => { setProjectTemplate(""); setProjectModalOpen(true); }}>＋ 新建项目</button></div>}</section>
-    {!projectDetailOpen && (projects.length ? <section className="project-card-grid">{projects.map((project) => <article className="project-card" key={project.id} role="button" tabIndex={0} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) return; setProjectTab("rules"); void onSelect(project.id).then(() => setProjectDetailOpen(true)); }} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setProjectTab("rules"); void onSelect(project.id).then(() => setProjectDetailOpen(true)); } }}><div className="project-card-top"><span className="project-mark">{project.icon || project.name.slice(0,1)}</span><div className="project-card-actions"><button className="project-edit-icon" aria-label={`编辑项目 ${project.name}`} title="编辑项目" disabled={busy} onClick={(event) => { event.stopPropagation(); setEditName(project.name); setEditSlug(project.slug); setDescription(project.description ?? ""); setEditIcon(project.icon || "◈"); setEditingID(project.id); }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12.8 4.2 3 3M4 16l3.7-.8 8.7-8.7a2.1 2.1 0 0 0-3-3l-8.7 8.7L4 16Z"/></svg></button><button className="project-delete-icon" aria-label={`删除项目 ${project.name}`} title="删除项目" disabled={busy} onClick={(event) => { event.stopPropagation(); setConfirmProjectDelete(project.id); }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 6h11M8 6V4.5h4V6m2.5 0-.7 10h-7L6 6m2.5 2.5v5m3-5v5"/></svg></button></div></div><h3>{project.name}</h3><p>{project.description || "暂无项目说明"}</p><code>{project.slug}</code><div className="project-card-footer"><span>项目规则</span><b>进入项目　→</b></div></article>)}</section> : <section className="project-list-empty"><span className="project-list-empty-icon" aria-hidden="true"><svg viewBox="0 0 40 40"><path d="m20 4 14 8v16l-14 8-14-8V12l14-8Z"/><path d="m6 12 14 8 14-8M20 20v16"/></svg></span><h2>这个组织还没有项目</h2><p>创建一个项目后，就可以在项目中管理规则集、配置鉴权并查看调用日志。</p><button className="primary" onClick={() => { setProjectTemplate(""); setProjectModalOpen(true); }}>＋ 创建第一个项目</button><button className="quiet" onClick={() => { setProjectTemplate("ecommerce"); setProjectModalOpen(true); }}>或创建演示项目</button></section>)}
+    <section className={`title-row project-page-heading ${projectDetailOpen ? "is-detail" : ""}`}>
+      <div className="project-page-heading-main">
+      <div>
+        {projectDetailOpen && activeProject ? <button type="button" className="project-detail-back" onClick={() => setProjectDetailOpen(false)} aria-label="返回所有项目">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 4.5 7 10l5.5 5.5M7.5 10h9" /></svg><span>所有项目</span>
+        </button> : <small className="eyebrow">PROJECTS</small>}
+        {projectDetailOpen && activeProject ? <div className="project-detail-identity">
+          <span className="project-detail-mark" aria-hidden="true">{activeProject.icon || activeProject.name.slice(0, 1)}</span>
+          <div className="project-detail-copy">
+            <div className="project-detail-title-line"><h1>{activeProject.name}</h1><code>{activeProject.slug}</code></div>
+            <p>{activeProject.description || "暂无项目说明"}</p>
+          </div>
+        </div> : <><h1>项目</h1><p>组织内的项目列表。选择项目查看规则集并管理项目配置。</p></>}
+      </div>
+      {projectDetailOpen && activeProject ? <div className="project-title-actions project-detail-title-actions">
+        <button className="project-header-icon-action" aria-label="编辑项目" title="编辑项目" disabled={busy} onClick={() => { setEditName(activeProject.name); setEditSlug(activeProject.slug); setDescription(activeProject.description ?? ""); setEditIcon(activeProject.icon || "◈"); setEditingID(activeProject.id); }}>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12.8 4.2 3 3M4 16l3.7-.8 8.7-8.7a2.1 2.1 0 0 0-3-3l-8.7 8.7L4 16Z"/></svg>
+        </button>
+        <button className="project-header-icon-action" aria-label="配置项目鉴权" title="项目鉴权" disabled={busy} onClick={() => { setNewSecret(""); setKeyCreateMode(false); setKeyModalOpen(true); }}>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7" cy="12" r="3.2"/><path d="m9.3 9.8 6.2-6.2 1.8 1.8-1.8 1.8-1.4-1.4-1.5 1.5 1.4 1.4-1.7 1.7"/></svg>
+        </button>
+      </div> : !projectDetailOpen && projects.length > 0 && <div className="project-title-actions"><button className="secondary" disabled={busy} onClick={() => { setProjectTemplate("ecommerce"); setProjectModalOpen(true); }}>创建演示项目</button><button className="primary" onClick={() => { setProjectTemplate(""); setProjectModalOpen(true); }}>＋ 新建项目</button></div>}
+      </div>
+      {projectDetailOpen && activeProject && <nav className="project-area-tabs" aria-label="项目模块">
+        <button className={projectTab === "rules" ? "active" : ""} onClick={() => setProjectTab("rules")}>规则集</button>
+        <button className={projectTab === "members" ? "active" : ""} onClick={() => setProjectTab("members")}>成员</button>
+      </nav>}
+    </section>
+    {!projectDetailOpen && (projects.length ? <section className="project-card-grid">{projects.map((project) => <article className="project-card" key={project.id} role="button" tabIndex={0} onClick={(event) => { if ((event.target as HTMLElement).closest("button")) return; setProjectTab("rules"); void onSelect(project.id).then(() => setProjectDetailOpen(true)); }} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setProjectTab("rules"); void onSelect(project.id).then(() => setProjectDetailOpen(true)); } }}><div className="project-card-top"><span className="project-mark">{project.icon || project.name.slice(0,1)}</span><div className="project-card-actions"><button className="project-edit-icon" aria-label={`编辑项目 ${project.name}`} title="编辑项目" disabled={busy} onClick={(event) => { event.stopPropagation(); setEditName(project.name); setEditSlug(project.slug); setDescription(project.description ?? ""); setEditIcon(project.icon || "◈"); setEditingID(project.id); }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12.8 4.2 3 3M4 16l3.7-.8 8.7-8.7a2.1 2.1 0 0 0-3-3l-8.7 8.7L4 16Z"/></svg></button><button className="project-delete-icon" aria-label={`删除项目 ${project.name}`} title="删除项目" disabled={busy} onClick={(event) => { event.stopPropagation(); setConfirmProjectDelete(project.id); }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 6h11M8 6V4.5h4V6m2.5 0-.7 10h-7L6 6m2.5 2.5v5m3-5v5"/></svg></button></div></div><h3>{project.name}</h3><p>{project.description || "暂无项目说明"}</p><code>{project.slug}</code><div className="project-card-footer"><span>规则集</span><b>进入项目　→</b></div></article>)}</section> : <section className="project-list-empty"><span className="project-list-empty-icon" aria-hidden="true"><svg viewBox="0 0 40 40"><path d="m20 4 14 8v16l-14 8-14-8V12l14-8Z"/><path d="m6 12 14 8 14-8M20 20v16"/></svg></span><h2>这个组织还没有项目</h2><p>创建一个项目后，就可以在项目中管理规则集、配置鉴权并查看调用日志。</p><button className="primary" onClick={() => { setProjectTemplate(""); setProjectModalOpen(true); }}>＋ 创建第一个项目</button><button className="quiet" onClick={() => { setProjectTemplate("ecommerce"); setProjectModalOpen(true); }}>或创建演示项目</button></section>)}
     {activeProject && <>
-      {projectDetailOpen && <div className="project-detail-toolbar"><button className="quiet" onClick={() => setProjectDetailOpen(false)}>← 返回项目列表</button><div><button className="secondary" onClick={() => { setEditName(activeProject.name); setEditSlug(activeProject.slug); setDescription(activeProject.description ?? ""); setEditIcon(activeProject.icon || "◈"); setEditingID(activeProject.id); }}>编辑项目</button><button className="project-icon-action" aria-label="配置项目鉴权" title="配置项目鉴权" onClick={() => { setNewSecret(""); setKeyCreateMode(false); setKeyModalOpen(true); }}><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="7" cy="12" r="3.2"/><path d="m9.3 9.8 6.2-6.2 1.8 1.8-1.8 1.8-1.4-1.4-1.5 1.5 1.4 1.4-1.7 1.7"/></svg></button></div></div>}
       {projectDetailOpen && <>
-      <nav className="project-area-tabs" aria-label="项目模块"><button className={projectTab === "rules" ? "active" : ""} onClick={() => setProjectTab("rules")}>规则</button><button className={projectTab === "members" ? "active" : ""} onClick={() => setProjectTab("members")}>成员</button></nav>
-      {projectTab === "members" ? <ProjectMembersPanel projectID={activeProject.id} /> : <section className="list-panel project-detail-panel"><div className="project-rules-toolbar"><div><b>项目规则</b><small>{rulesets.length} 个规则集 · {rulesets.reduce((count, item) => count + item.rules.length, 0)} 条规则 · {rulesets.filter((item) => item.enabled).length} 个启用</small></div><div><label className="project-rules-search"><span>⌕</span><input value={rulesetQuery} onChange={(event) => setRulesetQuery(event.target.value)} placeholder="搜索规则集" /></label><button className="primary" onClick={() => { setRulesetName(""); setRulesetModalOpen(true); }}>＋ 新建规则集</button><button className="secondary project-guide-button" onClick={() => setGuideOpen(true)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h8.5L16 7v9.5H4zM12 3.5V7h4M7 10h6M7 13h6"/></svg>使用指南</button></div></div>
+      {projectTab === "members" ? <ProjectMembersPanel projectID={activeProject.id} /> : <section className="list-panel project-detail-panel"><div className="project-rules-toolbar"><div><b>项目规则集</b><small>{rulesets.length} 个规则集 · {rulesets.reduce((count, item) => count + item.rules.length, 0)} 条规则 · {rulesets.filter((item) => item.enabled).length} 个启用</small></div><div><label className="project-rules-search"><span>⌕</span><input value={rulesetQuery} onChange={(event) => setRulesetQuery(event.target.value)} placeholder="搜索规则集" /></label><button className="primary" onClick={() => { setRulesetName(""); setRulesetModalOpen(true); }}>＋ 新建规则集</button><button className="secondary project-guide-button" onClick={() => setGuideOpen(true)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h8.5L16 7v9.5H4zM12 3.5V7h4M7 10h6M7 13h6"/></svg>使用指南</button></div></div>
         {!rulesets.length ? <div className="table-empty"><b>此项目还没有规则集</b><small>创建规则集，开始添加项目规则。</small><button className="secondary" onClick={() => setRulesetModalOpen(true)}>＋ 新建规则集</button></div> : !visibleRulesets.length ? <div className="table-empty"><b>没有匹配的规则集</b><small>调整搜索词后重试。</small></div> : <div className="project-rules-workspace" ref={projectRulesOrganizationRef} style={{ gridTemplateColumns: `${rulesetNavWidth}px 8px minmax(0,1fr)` }}>
           <nav className="project-ruleset-nav" aria-label="项目规则集">
             {visibleRulesets.map((set) => <button key={set.id} type="button" className={`project-ruleset-nav-item ${selectedRuleset?.id === set.id ? "selected" : ""}`} onClick={() => { setSelectedRulesetID(set.id); setActiveRulesetTab("rules"); setInvocationLogs([]); setInvocationLogsTotal(0); setInvocationPage(1); setSelectedInvocation(null); }}>
@@ -325,7 +358,7 @@ export function ProjectsPanel({
       </section>
     </div>}
     {keyModalOpen && <div className="project-modal-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setKeyModalOpen(false); setNewSecret(""); setKeyCreateMode(false); } }}><section className="project-modal project-config-modal" role="dialog" aria-modal="true" aria-labelledby="project-key-title"><header><div><small>PROJECT AUTHENTICATION</small><h2 id="project-key-title">{newSecret ? (keyType === "jwt" ? "保存 JWT" : "保存 API Key") : keyCreateMode ? (keyType === "jwt" ? "创建 JWT" : "创建 API Key") : "项目鉴权"}</h2><p>{newSecret ? "凭据只显示这一次，请立即复制并妥善保存。" : "使用 API Key 或 JWT 调用此项目内已保存的规则。"}</p></div><button className="quiet" onClick={() => { setKeyModalOpen(false); setNewSecret(""); setKeyCreateMode(false); }} aria-label="关闭">×</button></header>
-      {newSecret ? <div className="project-secret"><code>{newSecret}</code><p>{newCredentialKind === "signing_key" ? "这是项目专属 HS256 签名密钥，不是 Bearer Token。请只保存在你的服务端；JWT Header 必须带 kid（凭据 ID），并设置 exp。" : keyType === "jwt" ? `访问 Token 有效期至 ${keyExpiresAt ? new Date(keyExpiresAt).toLocaleString("zh-CN") : "默认 30 天"}；令牌只显示这一次。` : "API Key 只显示这一次。"}</p><pre>{newCredentialKind === "signing_key" ? `// Node.js：服务端使用该密钥签发短时 JWT（HS256）
+      {newSecret ? <div className="project-secret"><code>{newSecret}</code>{newCredentialKind === "signing_key" ? <p>项目专属 HS256 签名密钥（不是 Bearer Token）。JWT Header 须包含 <code>kid</code>（凭据 ID），Payload 须包含 <code>exp</code>。</p> : keyType === "jwt" ? <p>访问 Token 有效期至 {keyExpiresAt ? new Date(keyExpiresAt).toLocaleString("zh-CN") : "默认 30 天"}。</p> : null}<pre>{newCredentialKind === "signing_key" ? `// Node.js：服务端使用该密钥签发短时 JWT（HS256）
 const keyId = "${newCredentialID}";
 const secret = "${newSecret}"; // 只放服务端密钥管理器
 const hmacKey = Buffer.from(secret.slice("sr_sign_".length), "base64url");

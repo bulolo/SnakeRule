@@ -7,12 +7,16 @@ export function CustomSelect({
   onChange,
   disabled = false,
   ariaLabel,
+  className,
+  variant = "default",
 }: {
   value: string;
   options: { value: string; label: string }[];
   onChange: (value: string) => void;
   disabled?: boolean;
   ariaLabel: string;
+  className?: string;
+  variant?: "default" | "organization";
 }) {
   const root = useRef<HTMLDetailsElement>(null);
   const selected = options.find((option) => option.value === value);
@@ -36,7 +40,7 @@ export function CustomSelect({
     };
   }, []);
   return (
-    <details className="custom-select" ref={root}>
+    <details className={`custom-select${className ? ` ${className}` : ""}${variant === "organization" ? " organization-select" : ""}`} ref={root}>
       <summary
         aria-label={ariaLabel}
         aria-disabled={disabled}
@@ -47,7 +51,9 @@ export function CustomSelect({
           disabled ? "custom-select-trigger disabled" : "custom-select-trigger"
         }
       >
-        {selected?.label ?? value}
+        {variant === "organization" && <svg className="organization-select-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 17V6.5L10 3l6.5 3.5V17M2 17h16M7 9h.01M13 9h.01M7 12h.01M13 12h.01M9 17v-2.5h2V17" /></svg>}
+        <span className="custom-select-label">{selected?.label ?? value}</span>
+        <svg className="custom-select-chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m5.5 7.5 4.5 4.5 4.5-4.5" /></svg>
       </summary>
       {!disabled && (
         <div
@@ -66,7 +72,8 @@ export function CustomSelect({
                 if (root.current) root.current.open = false;
               }}
             >
-              {option.label}
+              <span>{option.label}</span>
+              {option.value === value && <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8" /></svg>}
             </button>
           ))}
         </div>

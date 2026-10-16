@@ -3,6 +3,7 @@ import {
   snakeRuleApi,
   type LicenseStatus,
   type PlatformSettings,
+  type SystemInfo,
   type AlertChannel as APIAlertChannel,
   type AdminUser as APIAdminUser,
   type Organization,
@@ -12,18 +13,46 @@ import { toast } from "sonner";
 
 type AdminUser = APIAdminUser;
 
+function formatEnvironment(environment?: string, unavailable = false) {
+  if (!environment) return unavailable ? "暂不可用" : "读取中…";
+  const labels: Record<string, string> = {
+    development: "开发",
+    local: "本地",
+    staging: "预发布",
+    production: "生产",
+    test: "测试",
+  };
+  return labels[environment] ?? environment;
+}
+
 function LicenseSettings({ version }: { version: string }) {
   const [status, setStatus] = useState<LicenseStatus | null>(null);
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [systemInfoError, setSystemInfoError] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const refreshStatus = useCallback(async (showBusy = false) => {
     if (showBusy) setBusy(true);
     setError("");
     try {
-      setStatus(await snakeRuleApi.getLicense());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "读取授权状态失败");
+      const [licenseResult, infoResult] = await Promise.allSettled([
+        snakeRuleApi.getLicense(),
+        snakeRuleApi.getSystemInfo(),
+      ]);
+      if (licenseResult.status === "fulfilled") {
+        setStatus(licenseResult.value);
+      } else {
+        const reason = licenseResult.reason;
+        setError(reason instanceof Error ? reason.message : "读取授权状态失败");
+      }
+      if (infoResult.status === "fulfilled") {
+        setSystemInfo(infoResult.value);
+        setSystemInfoError("");
+      } else {
+        const reason = infoResult.reason;
+        setSystemInfoError(reason instanceof Error ? reason.message : "读取运行状态失败");
+      }
     } finally {
       if (showBusy) setBusy(false);
     }
@@ -59,17 +88,16 @@ function LicenseSettings({ version }: { version: string }) {
     <>
       <div className="settings-hero">
         <div>
-          <small>LICENSE & VERSION</small>
+          <small>SYSTEM INFORMATION</small>
           <h2>授权与版本</h2>
-          <p>查看当前运行版本、产品授权和实例标识。</p>
+          <p>查看运行环境、数据库连接和产品授权状态。</p>
         </div>
       </div>
       <section className="license-summary-card">
         <header className="license-card-heading">
-          <span className="settings-icon">⌘</span>
+          <span className="settings-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><ellipse cx="10" cy="5" rx="6.5" ry="2.5"/><path d="M3.5 5v10c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5V5M3.5 10c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5"/></svg></span>
           <div>
-            <b>系统</b>
-            <small>SnakeRule 平台授权与版本信息</small>
+            <b>运行状态</b>
           </div>
           <button
             className="quiet"
@@ -82,7 +110,11 @@ function LicenseSettings({ version }: { version: string }) {
         <div className="license-system-grid">
           <div>
             <small>版本</small>
-            <b>v{version}</b>
+            <b>v{systemInfo?.version || version}</b>
+          </div>
+          <div>
+            <small>运行环境</small>
+            <b>{formatEnvironment(systemInfo?.environment, Boolean(systemInfoError))}</b>
           </div>
           <div>
             <small>版本类型</small>
@@ -120,10 +152,7 @@ function LicenseSettings({ version }: { version: string }) {
             </div>
           </div>
         ) : (
-          <p className="license-empty-copy">
-            上传授权文件后，Pulse Agent
-            将校验签名和实例绑定，通过后立即更新授权状态。
-          </p>
+          <p className="license-empty-copy">上传授权文件以启用产品授权。</p>
         )}
         {status?.feature_keys?.length ? (
           <div className="license-feature-list">
@@ -171,9 +200,16 @@ function LicenseSettings({ version }: { version: string }) {
           </div>
         </div>
       </section>
-      <p className="settings-readonly-note">
-        授权凭证仅保存在服务端。
-      </p>
+      <section className="system-service-card">
+        <div>
+          <b>数据库</b>
+          <small>{systemInfo?.database.backend || "PostgreSQL"}</small>
+        </div>
+        <span className={`system-service-status ${systemInfo?.database.connected ? "is-connected" : systemInfoError ? "is-unavailable" : ""}`}>
+          <i />{systemInfo ? (systemInfo.database.connected ? "连接正常" : "连接异常") : systemInfoError ? "状态不可用" : "检查中…"}
+        </span>
+      </section>
+      {systemInfoError && <p className="system-info-error">无法读取服务状态：{systemInfoError}</p>}
       {error && (
         <div className="login-error license-error" role="alert">
           {error}
@@ -509,7 +545,6 @@ function AlertChannelSettings({ organizationID, onRefresh }: { organizationID: s
         {item.type === "internal" ? <div className="workspace-row-actions"><span className="settings-readonly-note">不可删除</span></div> : confirmDelete === item.id ? <div className="workspace-confirm"><span>确认删除此渠道？</span><button className="quiet" disabled={busy} onClick={() => setConfirmDelete("")}>取消</button><button className="workspace-confirm-delete" disabled={busy} onClick={() => void remove(item)}>{busy ? "删除中…" : "确认删除"}</button></div> : <div className="workspace-row-actions"><button className="quiet" disabled={busy || !item.enabled} onClick={() => void sendTest(item)}>测试</button><button className="quiet" disabled={busy} onClick={() => startEdit(item)}>编辑</button><button className="quiet workspace-delete" disabled={busy} onClick={() => setConfirmDelete(item.id)}>删除</button></div>}
       </article>)}
     </section>}
-    {!formOpen && <p className="settings-readonly-note">密钥不会通过读取接口返回；编辑时留空可保留现有密钥。</p>}
   </>;
 }
 
@@ -626,63 +661,20 @@ export function SettingsDialog({
 }) {
   const platform = area === "platform";
   const canManageOrganization = isSuperAdmin || organizationRole === "organization_admin";
-  const [tab, setTab] = useState(platform ? "system" : "general");
+  const [tab, setTab] = useState(platform ? "system" : canManageOrganization ? "users" : "alerts");
   const [users,setUsers]=useState<AdminUser[]>([]);
   const refreshUsers=useCallback(async()=>{const body=await snakeRuleApi.listOrganizationUsers(activeOrganizationID);setUsers(body.list??[])},[activeOrganizationID]);
   useEffect(()=>{if(!platform && canManageOrganization)void refreshUsers().catch((error:Error)=>toast.error("读取用户失败",{description:error.message}))},[platform,canManageOrganization,refreshUsers]);
   const tabs = platform
       ? [
-        { id: "system", label: "系统信息", group: "平台管理" },
-        { id: "organizations", label: "组织管理", group: "平台管理" },
-        { id: "brand", label: "平台品牌", group: "平台管理" },
+        { id: "system", label: "系统信息", group: "系统" },
+        { id: "brand", label: "平台品牌", group: "配置" },
+        { id: "organizations", label: "组织管理", group: "资源" },
       ]
     : [
-        { id: "general", label: "组织信息", group: "组织" },
-        ...(canManageOrganization ? [{ id: "users", label: "用户管理", group: "组织" }] : []),
-        ...(canManageOrganization ? [{ id: "alerts", label: "告警渠道", group: "组织" }] : []),
+        ...(canManageOrganization ? [{ id: "users", label: "用户管理", group: "用户" }] : []),
+        ...(canManageOrganization ? [{ id: "alerts", label: "告警渠道", group: "配置" }] : []),
       ];
-  const heading = (
-    eyebrow: string,
-    title: string,
-    description: string,
-    badge?: string,
-  ) => (
-    <div className="settings-hero">
-      <div>
-        <small>{eyebrow}</small>
-        <h2>{title}</h2>
-        <p>{description}</p>
-      </div>
-      {badge && (
-        <span className="settings-version-badge">
-          <i />
-          版本 <b>v{badge}</b>
-        </span>
-      )}
-    </div>
-  );
-  const group = (
-    title: string,
-    hint: string,
-    rows: [string, React.ReactNode][],
-  ) => (
-    <section className="settings-detail-section">
-      <header>
-        <div>
-          <h3>{title}</h3>
-          <small>{hint}</small>
-        </div>
-      </header>
-      <div className="settings-detail-grid">
-        {rows.map(([label, value]) => (
-          <div className="settings-detail-row" key={label}>
-            <span>{label}</span>
-            <b>{value}</b>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
   if (platform && !isSuperAdmin) return null;
   return (
     <div
@@ -705,12 +697,12 @@ export function SettingsDialog({
                 platform ? "settings-icon platform-icon" : "settings-icon"
               }
             >
-              {platform ? "◆" : "⚙"}
+              {platform ? <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h13M7 3.5v4M13 8v4M9 12.5v4" /></svg> : <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17h14M5 17V6.5L10 4l5 2.5V17M8 9h.01M12 9h.01M8 12h.01M12 12h.01M9 17v-2.5h2V17" /></svg>}
             </span>
             <div>
               <b>{platform ? "平台设置" : "组织设置"}</b>
               <small>
-                {platform ? "平台授权、组织与品牌配置" : "当前组织的基本信息"}
+                {platform ? "平台授权、组织与品牌配置" : "当前组织的成员和告警配置"}
               </small>
             </div>
           </div>
@@ -722,7 +714,7 @@ export function SettingsDialog({
           <nav className="settings-tabs">
             {tabs.map((item, index) => (
               <div key={item.id}>
-                {(index === 0 || item.group !== tabs[index - 1].group) && (
+                {item.group && (index === 0 || item.group !== tabs[index - 1].group) && (
                   <small className="settings-nav-label">{item.group}</small>
                 )}
                 <button
@@ -753,22 +745,6 @@ export function SettingsDialog({
                   activeOrganizationID={activeOrganizationID}
                   onRefresh={onOrganizationRefresh}
                 />
-              </>
-            )}
-            {!platform && tab === "general" && (
-              <>
-                {heading(
-                  "ORGANIZATION SETTINGS",
-                  "组织信息",
-                  "当前组织的标识信息。平台级授权和组织管理由超级管理员在平台设置中维护。",
-                )}
-                <div className="settings-config-grid">
-                  {group("当前组织", "由平台管理员创建和分配", [
-                    ["组织", organizations.find((organization) => organization.id === activeOrganizationID)?.name ?? "—"],
-                    ["Slug", organizations.find((organization) => organization.id === activeOrganizationID)?.slug ?? "—"],
-                    ["说明", organizations.find((organization) => organization.id === activeOrganizationID)?.description || "暂无说明"],
-                  ])}
-                </div>
               </>
             )}
             {!platform && tab === "alerts" && <AlertChannelSettings organizationID={activeOrganizationID} onRefresh={onAlertChannelRefresh} />}
