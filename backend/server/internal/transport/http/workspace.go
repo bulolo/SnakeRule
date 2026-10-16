@@ -89,11 +89,15 @@ func (s *Server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		for _, key := range keys {
 			_ = s.projectKeys.Delete(workspaceContext, project.ID, key.ID)
 		}
-		if project.ID != repo.DefaultProjectID {
-			if err := s.projects.Delete(workspaceContext, project.ID); err != nil {
+		if s.invocationLogs != nil {
+			if err := s.invocationLogs.DeleteProject(id, project.ID); err != nil {
 				writeError(w, http.StatusInternalServerError, err)
 				return
 			}
+		}
+		if err := s.projects.Delete(workspaceContext, project.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
 		}
 	}
 	if err := s.workspaces.Delete(r.Context(), id); err != nil {

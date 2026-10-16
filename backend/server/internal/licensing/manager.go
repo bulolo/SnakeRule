@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,8 @@ import (
 )
 
 const productID = "snakerule"
+
+var canonicalUUIDv4 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 type Status struct {
 	Configured     bool           `json:"configured"`
@@ -73,12 +76,21 @@ func New(path, encryptionKey string) (*Manager, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	if m.state.InstallationID == "" {
-		var id [16]byte
-		if _, err := rand.Read(id[:]); err != nil {
-			return nil, err
+	if !canonicalUUIDv4.MatchString(m.state.InstallationID) {
+		if legacy, err := hex.DecodeString(m.state.InstallationID); err == nil && len(legacy) == 16 {
+			// Preserve existing installations while upgrading the old 32-hex ID format.
+			legacy[6] = legacy[6]&0x0f | 0x40
+			legacy[8] = legacy[8]&0x3f | 0x80
+			m.state.InstallationID = formatUUID(legacy)
+		} else {
+			var id [16]byte
+			if _, err := rand.Read(id[:]); err != nil {
+				return nil, err
+			}
+			id[6] = id[6]&0x0f | 0x40
+			id[8] = id[8]&0x3f | 0x80
+			m.state.InstallationID = formatUUID(id[:])
 		}
-		m.state.InstallationID = hex.EncodeToString(id[:])
 		if err := m.persist(m.state); err != nil {
 			return nil, err
 		}
@@ -94,6 +106,11 @@ func New(path, encryptionKey string) (*Manager, error) {
 		m.refresh(context.Background(), key)
 	}
 	return m, nil
+}
+
+func formatUUID(id []byte) string {
+	encoded := hex.EncodeToString(id)
+	return encoded[:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:]
 }
 
 func (m *Manager) GetStatus() Status {
@@ -116,6 +133,26 @@ func (m *Manager) GetStatus() Status {
 		s.Error = m.errText
 	}
 	return s
+}
+
+// TelemetryCredentials returns the active license and deployment ID only to the
+// internal Pulse heartbeat sender. The API never exposes the license token.
+func (m *Manager) TelemetryCredentials() (string, string, bool, error) {
+	status := m.GetStatus()
+	if !status.IsLicensed {
+		return "", "", false, nil
+	}
+	m.mu.RLock()
+	state := m.state
+	m.mu.RUnlock()
+	if state.LicenseCipher == "" {
+		return "", "", false, nil
+	}
+	key, err := m.decrypt(state.LicenseCipher)
+	if err != nil {
+		return "", "", false, err
+	}
+	return key, state.InstallationID, true, nil
 }
 
 func (m *Manager) Upload(ctx context.Context, key string) error {

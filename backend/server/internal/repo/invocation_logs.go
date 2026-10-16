@@ -47,3 +47,16 @@ func (r *MemoryInvocationLogRepository) List(workspaceID, projectID string) []do
 	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
 	return items
 }
+
+func (r *MemoryInvocationLogRepository) DeleteProject(workspaceID, projectID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	kept := r.items[:0]
+	for _, item := range r.items {
+		if item.WorkspaceID != workspaceID || item.ProjectID != projectID {
+			kept = append(kept, item)
+		}
+	}
+	r.items = kept
+	return saveJSONFile(r.path, r.items)
+}

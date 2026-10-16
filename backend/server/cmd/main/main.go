@@ -18,6 +18,7 @@ func main() {
 		slog.Error("initialize application", "error", err)
 		os.Exit(1)
 	}
+	defer app.StopBackground()
 
 	serverErr := make(chan error, 1)
 	go func() { serverErr <- app.Server.ListenAndServe() }()

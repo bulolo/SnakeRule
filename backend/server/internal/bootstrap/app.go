@@ -15,13 +15,21 @@ import (
 	"github.com/szplanner/snakerule/internal/licensing"
 	"github.com/szplanner/snakerule/internal/repo"
 	"github.com/szplanner/snakerule/internal/service"
+	"github.com/szplanner/snakerule/internal/telemetry"
 	httpapi "github.com/szplanner/snakerule/internal/transport/http"
 )
 
 type App struct {
-	Config *config.Config
-	Log    *slog.Logger
-	Server *http.Server
+	Config         *config.Config
+	Log            *slog.Logger
+	Server         *http.Server
+	stopBackground context.CancelFunc
+}
+
+func (a *App) StopBackground() {
+	if a.stopBackground != nil {
+		a.stopBackground()
+	}
 }
 
 func New() (*App, error) {
@@ -63,6 +71,21 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load invocation logs: %w", err)
 	}
+	workspaceItems, err := workspaceStore.List(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("list workspaces for project migration: %w", err)
+	}
+	for _, workspace := range workspaceItems {
+		if err := store.DeleteProjectScope(workspace.ID, "default"); err != nil {
+			return nil, fmt.Errorf("remove legacy default project rules: %w", err)
+		}
+		if err := projectKeyStore.DeleteProject(workspace.ID, "default"); err != nil {
+			return nil, fmt.Errorf("remove legacy default project credentials: %w", err)
+		}
+		if err := invocationLogStore.DeleteProject(workspace.ID, "default"); err != nil {
+			return nil, fmt.Errorf("remove legacy default project logs: %w", err)
+		}
+	}
 	jwtSigningKey, err := loadOrCreateJWTSigningKey(filepath.Join(stateDir, "jwt-signing.key"))
 	if err != nil {
 		return nil, fmt.Errorf("load JWT signing key: %w", err)
@@ -75,40 +98,22 @@ func New() (*App, error) {
 	workspaces := service.NewWorkspaces(workspaceStore)
 	rulesets := service.NewRulesets(store)
 	engine := service.NewEngine(store)
-	seedContext := repo.WithProject(repo.WithWorkspace(context.Background(), repo.DefaultWorkspaceID), repo.DefaultProjectID)
-	if _, err := store.Get(seedContext, "order-risk"); err == repo.ErrNotFound {
-		err = rulesets.Save(seedContext, demoRuleset())
-		if err != nil {
-			return nil, fmt.Errorf("seed demo ruleset: %w", err)
-		}
-	}
 	handler := httpapi.New(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL, SessionStorePath: filepath.Join(stateDir, "sessions.json"), JWTSigningKey: jwtSigningKey}, licenseManager, workspaces)
 	handler.SetAlertChannelRepository(alertChannelStore)
 	handler.SetNotificationRepository(notificationStore)
 	handler.SetInvocationLogRepository(invocationLogStore)
 	handler.SetProjectRepositories(projectStore, projectKeyStore)
 	server := &http.Server{Addr: ":" + cfg.Server.Port, Handler: handler.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
-	return &App{Config: cfg, Log: logger, Server: server}, nil
+	backgroundCtx, stopBackground := context.WithCancel(context.Background())
+	telemetry.Start(backgroundCtx, telemetry.Config{
+		Environment: cfg.Server.Env,
+		Endpoint:    cfg.Pulse.HeartbeatURL,
+		Interval:    time.Duration(cfg.Pulse.HeartbeatIntervalSecond) * time.Second,
+		Timeout:     time.Duration(cfg.Pulse.HeartbeatTimeoutSecond) * time.Second,
+	}, telemetry.Stores{License: licenseManager, Workspaces: workspaceStore, Projects: projectStore, Rulesets: store})
+	return &App{Config: cfg, Log: logger, Server: server, stopBackground: stopBackground}, nil
 }
 
-func demoRuleset() domain.Ruleset {
-	return domain.Ruleset{
-		ID: "order-risk", Name: "订单风险规则", Version: "1.0.0", Description: "演示 all 条件组和 facts 路径", Enabled: true,
-		Rules: []domain.Rule{
-			{ID: "large-new-order", Name: "大额新客订单", Priority: 100, Enabled: true,
-				Conditions: domain.Condition{All: []domain.Condition{
-					{Fact: "order.amount", Operator: "greaterThan", Value: 10000},
-					{Fact: "customer.isNew", Operator: "equal", Value: true},
-				}},
-				Actions: []domain.Action{{Type: "tag", Config: map[string]any{"label": "MANUAL_REVIEW"}}},
-			},
-			{ID: "vip-order", Name: "VIP 订单标记", Priority: 50, Enabled: true,
-				Conditions: domain.Condition{Fact: "customer.level", Operator: "equal", Value: "VIP"},
-				Actions:    []domain.Action{{Type: "tag", Config: map[string]any{"label": "VIP"}}},
-			},
-		},
-	}
-}
 func newLogger(level, format string) *slog.Logger {
 	var l slog.Level
 	switch strings.ToLower(level) {

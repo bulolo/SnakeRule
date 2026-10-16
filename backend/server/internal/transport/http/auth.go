@@ -70,6 +70,17 @@ func newSessionStore(ttl time.Duration, path string) *sessionStore {
 	if data, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(data, &s.sessions)
 	}
+	legacyProject := false
+	for token, current := range s.sessions {
+		if current.ProjectID == "default" {
+			current.ProjectID = ""
+			s.sessions[token] = current
+			legacyProject = true
+		}
+	}
+	if legacyProject {
+		_ = s.persist()
+	}
 	return s
 }
 
@@ -166,7 +177,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 			delete(s.sessions.sessions, existingToken)
 		}
 	}
-	s.sessions.sessions[token] = session{ExpiresAt: expires, WorkspaceID: repo.DefaultWorkspaceID, ProjectID: repo.DefaultProjectID}
+	s.sessions.sessions[token] = session{ExpiresAt: expires, WorkspaceID: repo.DefaultWorkspaceID}
 	if err := s.sessions.persist(); err != nil {
 		s.sessions.mu.Unlock()
 		writeError(w, http.StatusInternalServerError, errors.New("unable to persist session"))
@@ -252,7 +263,7 @@ func (s *sessionStore) setWorkspace(r *http.Request, workspaceID string) bool {
 		return false
 	}
 	current.WorkspaceID = workspaceID
-	current.ProjectID = repo.DefaultProjectID
+	current.ProjectID = ""
 	s.sessions[cookie.Value] = current
 	if s.persist() != nil {
 		return false
@@ -263,13 +274,13 @@ func (s *sessionStore) setWorkspace(r *http.Request, workspaceID string) bool {
 func (s *sessionStore) projectID(r *http.Request) string {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil {
-		return repo.DefaultProjectID
+		return ""
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	current, ok := s.sessions[cookie.Value]
-	if !ok || time.Now().After(current.ExpiresAt) || current.ProjectID == "" {
-		return repo.DefaultProjectID
+	if !ok || time.Now().After(current.ExpiresAt) {
+		return ""
 	}
 	return current.ProjectID
 }

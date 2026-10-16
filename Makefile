@@ -1,4 +1,4 @@
-.PHONY: help dev-init check-dev-env dev dev-up dev-open dev-down dev-build dev-rebuild dev-restart dev-restart-backend dev-logs dev-logs-backend dev-logs-admin dev-logs-nginx dev-logs-docs dev-status dev-backend run-backend build-backend format check-backend check-all test gen-sdk set-version docs-install docs-dev docs-build docs-open infra-up infra-down infra-logs docker-up docker-down prod-init check-prod-env prod-build prod-up prod-down publish-github publish-codeup publish-all
+.PHONY: help dev-init check-dev-env dev dev-up dev-open dev-down dev-clean dev-build dev-rebuild dev-restart dev-restart-backend dev-logs dev-logs-backend dev-logs-admin dev-logs-nginx dev-logs-docs dev-status dev-backend run-backend build-backend format check-backend check-all test gen-sdk set-version docs-install docs-dev docs-build docs-open infra-up infra-down infra-logs docker-up docker-down prod-init check-prod-env prod-build prod-up prod-down publish-github publish-codeup publish-all
 
 GO ?= go
 DEV_COMPOSE = docker compose --env-file backend/.env -f docker-compose.dev.yml
@@ -26,6 +26,7 @@ help:
 	@echo "  make docs-dev       Run the documentation site locally (port 8003)"
 	@echo "  make docs-build     Build the static documentation site"
 	@echo "  make dev-down       Stop and remove dev containers"
+	@echo "  make dev-clean      Reset dev containers, images, and data volumes"
 	@echo "  make dev-build      Build development images"
 	@echo "  make dev-rebuild    Rebuild and start development containers"
 	@echo "  make dev-restart    Restart the development stack"
@@ -99,6 +100,10 @@ dev-rebuild: check-dev-env
 	$(DEV_COMPOSE) up -d --build --force-recreate
 dev-down:
 	$(DEV_COMPOSE) --profile infra down --remove-orphans
+dev-clean: check-dev-env
+	@echo "WARNING: this removes development containers, local images, and all development data volumes."
+	@read -p "Type 'yes' to continue: " ans && [ "$${ans}" = "yes" ] || (echo "Cancelled"; exit 1)
+	$(DEV_COMPOSE) --profile infra down -v --rmi local --remove-orphans
 dev-restart:
 	$(DEV_COMPOSE) restart
 dev-restart-backend:

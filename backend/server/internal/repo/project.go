@@ -22,9 +22,7 @@ type MemoryProjectRepository struct {
 }
 
 func NewMemoryProjectRepository() *MemoryProjectRepository {
-	return &MemoryProjectRepository{items: map[string]map[string]domain.Project{
-		DefaultWorkspaceID: {DefaultProjectID: {ID: DefaultProjectID, Name: "默认项目", Slug: "default"}},
-	}}
+	return &MemoryProjectRepository{items: make(map[string]map[string]domain.Project)}
 }
 
 func NewPersistentProjectRepository(path string) (*MemoryProjectRepository, error) {
@@ -37,28 +35,29 @@ func NewPersistentProjectRepository(path string) (*MemoryProjectRepository, erro
 		r = NewMemoryProjectRepository()
 		r.path = path
 	}
+	removedLegacy := false
+	for _, projects := range r.items {
+		if _, ok := projects["default"]; ok {
+			delete(projects, "default")
+			removedLegacy = true
+		}
+	}
+	if removedLegacy {
+		if err := saveJSONFile(path, r.items); err != nil {
+			return nil, err
+		}
+	}
 	return r, nil
 }
 
 func (r *MemoryProjectRepository) List(ctx context.Context) ([]domain.Project, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if len(r.items[workspaceIDFrom(ctx)]) == 0 {
-		return []domain.Project{cloneProject(domain.Project{ID: DefaultProjectID, Name: "默认项目", Slug: "default"})}, nil
-	}
 	items := make([]domain.Project, 0, len(r.items[workspaceIDFrom(ctx)]))
 	for _, item := range r.items[workspaceIDFrom(ctx)] {
 		items = append(items, cloneProject(item))
 	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].ID == DefaultProjectID {
-			return true
-		}
-		if items[j].ID == DefaultProjectID {
-			return false
-		}
-		return items[i].Name < items[j].Name
-	})
+	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	return items, nil
 }
 
@@ -66,9 +65,6 @@ func (r *MemoryProjectRepository) Get(ctx context.Context, id string) (domain.Pr
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	item, ok := r.items[workspaceIDFrom(ctx)][id]
-	if !ok && id == DefaultProjectID {
-		return cloneProject(domain.Project{ID: DefaultProjectID, Name: "默认项目", Slug: "default"}), nil
-	}
 	if !ok {
 		return domain.Project{}, ErrNotFound
 	}
@@ -80,7 +76,7 @@ func (r *MemoryProjectRepository) Save(ctx context.Context, item domain.Project)
 	defer r.mu.Unlock()
 	wid := workspaceIDFrom(ctx)
 	if r.items[wid] == nil {
-		r.items[wid] = map[string]domain.Project{DefaultProjectID: {ID: DefaultProjectID, Name: "默认项目", Slug: "default"}}
+		r.items[wid] = make(map[string]domain.Project)
 	}
 	r.items[wid][item.ID] = cloneProject(item)
 	return saveJSONFile(r.path, r.items)
@@ -89,9 +85,6 @@ func (r *MemoryProjectRepository) Save(ctx context.Context, item domain.Project)
 func (r *MemoryProjectRepository) Delete(ctx context.Context, id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if id == DefaultProjectID {
-		return ErrProtected
-	}
 	projects := r.items[workspaceIDFrom(ctx)]
 	if _, ok := projects[id]; !ok {
 		return ErrNotFound

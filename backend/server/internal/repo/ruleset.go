@@ -80,6 +80,13 @@ func (r *MemoryRulesetRepository) Delete(ctx context.Context, id string) error {
 	return saveJSONFile(r.path, r.items)
 }
 
+func (r *MemoryRulesetRepository) DeleteProjectScope(workspaceID, projectID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.items, workspaceID+"/"+projectID)
+	return saveJSONFile(r.path, r.items)
+}
+
 func rulesetScopeID(ctx context.Context) string {
 	return workspaceIDFrom(ctx) + "/" + projectIDFrom(ctx)
 }

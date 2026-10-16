@@ -70,7 +70,7 @@ export function Workbench() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspaceID, setActiveWorkspaceID] = useState("default");
   const [projects, setProjects] = useState<Project[]>([]);
-  const [openProjectID, setOpenProjectID] = useState("default");
+  const [openProjectID, setOpenProjectID] = useState("");
   const [projectDetailOpen, setProjectDetailOpen] = useState(false);
   const [editorReturnScreen, setEditorReturnScreen] = useState<"projects">("projects");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -85,7 +85,7 @@ export function Workbench() {
     const response = await fetch("/api/v1/projects");
     const body = await readAPIJSON(response, "读取项目");
     setProjects(body.items ?? []);
-    setOpenProjectID(body.active_project_id ?? "default");
+    setOpenProjectID(body.active_project_id ?? "");
   }, []);
 
   const refreshAlertChannels = useCallback(async () => {
@@ -203,7 +203,7 @@ export function Workbench() {
     try {
       await snakeRuleApi.setActiveWorkspace(workspaceID);
       setActiveWorkspaceID(workspaceID);
-      setOpenProjectID("default");
+      setOpenProjectID("");
       setScreen("projects");
       setDecision(null);
       setActiveRuleId("");
@@ -607,10 +607,10 @@ export function Workbench() {
                 <div>
                   <small className="eyebrow">WORKSPACE OVERVIEW</small>
                   <h1>概览</h1>
-                  <p>工作空间中的项目与平台入口。</p>
+                  <p>查看当前工作空间的项目，并快速进入项目管理规则。</p>
                 </div>
                 <button className="primary create-button" onClick={() => setScreen("projects")}>
-                  查看项目
+                  管理项目
                 </button>
               </section>
               <section className="metrics list-metrics">
@@ -634,46 +634,19 @@ export function Workbench() {
                   <em>当前工作空间</em>
                 </div>
                 <div>
-                  <small>默认项目</small>
-                  <b>{projects.some((project) => project.id === "default") ? "已就绪" : "未创建"}</b>
-                  <em>工作空间基础项目</em>
-                </div>
-                <div>
                   <small>平台版本</small>
                   <b>v{version}</b>
                   <em>SnakeRule</em>
                 </div>
               </section>
-              <section className="overview-shortcuts">
-                <button onClick={() => setScreen("projects")}>
-                  <span className="shortcut-icon rules-shortcut">↗</span>
-                  <span>
-                    <b>项目</b>
-                    <small>查看工作空间内的项目</small>
-                  </span>
-                  <i>→</i>
-                </button>
-                <button onClick={() => setSettingsArea("platform")}>
-                  <span className="shortcut-icon workspace-shortcut">⌘</span>
-                  <span>
-                    <b>工作空间</b>
-                    <small>创建空间并管理空间信息</small>
-                  </span>
-                  <i>→</i>
-                </button>
-                <div className="overview-health"><span className="health-dot" /><span><b>规则属于项目</b><small>进入项目后查看和管理规则</small></span></div>
-              </section>
               <section className="list-panel">
                 <div className="list-toolbar">
                   <div>
-                    <b>工作空间项目</b>
+                    <b>项目</b>
                     <small>共 {projects.length} 个</small>
                   </div>
-                  <button className="quiet" onClick={() => setScreen("projects")}>
-                    管理项目　→
-                  </button>
                 </div>
-                <div className="overview-project-list">{projects.map((project) => <button key={project.id} className="overview-project-row" onClick={() => { void switchProject(project.id).then(() => { setProjectDetailOpen(true); setScreen("projects"); }); }}><span className="project-mark">{project.name.slice(0, 1)}</span><span><b>{project.name}</b><small>{project.slug} · {project.description || "暂无说明"}</small></span><strong>进入项目　→</strong></button>)}{!projects.length && <div className="table-empty"><b>此工作空间还没有项目</b><button className="secondary" onClick={() => setScreen("projects")}>查看项目</button></div>}</div>
+                <div className="overview-project-list">{projects.map((project) => <button key={project.id} className="overview-project-row" onClick={() => { void switchProject(project.id).then(() => { setProjectDetailOpen(true); setScreen("projects"); }); }}><span className="project-mark">{project.name.slice(0, 1)}</span><span><b>{project.name}</b><small>{project.slug} · {project.description || "暂无说明"}</small></span><strong>进入　→</strong></button>)}{!projects.length && <div className="table-empty"><b>此工作空间还没有项目</b><small>创建项目后，可以在项目内管理规则集、鉴权和告警。</small><button className="secondary" onClick={() => setScreen("projects")}>创建项目</button></div>}</div>
               </section>
             </>
           ) : screen === "projects" ? (

@@ -44,6 +44,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err)
 		return
 	}
+	if input.Template != "" && input.Template != "ecommerce" {
+		writeError(w, 400, errors.New("不支持的项目模板"))
+		return
+	}
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" || len([]rune(input.Name)) > 80 {
 		writeError(w, 400, errors.New("项目名称必填且不能超过 80 个字符"))
@@ -112,8 +116,8 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	input.Name = strings.TrimSpace(input.Name)
 	input.Slug = strings.TrimSpace(strings.ToLower(input.Slug))
-	if input.Name == "" || input.Slug == "" || !projectSlugPattern.MatchString(input.Slug) {
-		writeError(w, 400, errors.New("项目名称和有效 slug 为必填项"))
+	if input.Name == "" || len([]rune(input.Name)) > 80 || input.Slug == "" || !projectSlugPattern.MatchString(input.Slug) {
+		writeError(w, 400, errors.New("项目名称必填且不超过 80 个字符，slug 格式无效"))
 		return
 	}
 	all, _ := s.projects.List(r.Context())
@@ -133,12 +137,12 @@ func (s *Server) updateProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if id == repo.DefaultProjectID {
-		writeError(w, 409, errors.New("默认项目不能删除"))
+	if _, err := s.projects.Get(r.Context(), id); err != nil {
+		s.writeServiceError(w, err)
 		return
 	}
 	if id == s.sessions.projectID(r) {
-		if !s.sessions.setProject(r, repo.DefaultProjectID) {
+		if !s.sessions.setProject(r, "") {
 			writeError(w, 401, errors.New("authentication required"))
 			return
 		}
@@ -155,9 +159,22 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	keys, _ := s.projectKeys.List(r.Context(), id)
+	keys, err := s.projectKeys.List(r.Context(), id)
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
 	for _, key := range keys {
-		_ = s.projectKeys.Delete(r.Context(), id, key.ID)
+		if err := s.projectKeys.Delete(r.Context(), id, key.ID); err != nil {
+			writeError(w, 500, err)
+			return
+		}
+	}
+	if s.invocationLogs != nil {
+		if err := s.invocationLogs.DeleteProject(repo.WorkspaceIDFrom(r.Context()), id); err != nil {
+			writeError(w, 500, err)
+			return
+		}
 	}
 	if err := s.projects.Delete(r.Context(), id); err != nil {
 		s.writeServiceError(w, err)

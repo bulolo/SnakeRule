@@ -88,6 +88,22 @@ func (r *MemoryProjectKeyRepository) Delete(ctx context.Context, project, id str
 	delete(r.items, id)
 	return r.persist()
 }
+
+func (r *MemoryProjectKeyRepository) DeleteProject(workspaceID, projectID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	changed := false
+	for id, item := range r.items {
+		if item.Workspace == workspaceID && item.Project == projectID {
+			delete(r.items, id)
+			changed = true
+		}
+	}
+	if changed {
+		return r.persist()
+	}
+	return nil
+}
 func (r *MemoryProjectKeyRepository) FindByHash(_ context.Context, hash string) (domain.APIKeyCredential, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

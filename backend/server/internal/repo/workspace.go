@@ -10,7 +10,6 @@ import (
 )
 
 const DefaultWorkspaceID = "default"
-const DefaultProjectID = "default"
 
 type workspaceContextKey struct{}
 type projectContextKey struct{}
@@ -33,17 +32,11 @@ func workspaceIDFrom(ctx context.Context) string {
 func WorkspaceIDFrom(ctx context.Context) string { return workspaceIDFrom(ctx) }
 
 func WithProject(ctx context.Context, id string) context.Context {
-	if id == "" {
-		id = DefaultProjectID
-	}
 	return context.WithValue(ctx, projectContextKey{}, id)
 }
 
 func projectIDFrom(ctx context.Context) string {
 	id, _ := ctx.Value(projectContextKey{}).(string)
-	if id == "" {
-		return DefaultProjectID
-	}
 	return id
 }
 
