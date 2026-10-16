@@ -27,6 +27,8 @@ make dev-up
 
 登录账号通过 `backend/.env` 中的 `AUTH_EMAIL`、`AUTH_NAME` 和 `AUTH_PASSWORD` 配置。`make dev-init` 会从示例文件创建本地配置；请勿将真实密码提交到代码仓库。
 
+首次初始化使用示例配置中的账号和占位密码。只在本机试用时可直接登录；共享环境前请先修改 `AUTH_PASSWORD` 并重建后端容器。登录后请先查看[管理工作台栏目说明](./admin-console.md)。
+
 ## 平台授权
 
 登录后可在「平台设置 → 系统信息」查看版本、实例 ID 和授权状态，并上传、替换或清除授权文件。`make dev-init` 会在被 Git 忽略的 `backend/.env` 中生成本地加密密钥；重启或重建容器时该密钥会保留，`LICENSE_STORE_PATH` 默认写入持久化数据卷。
@@ -47,7 +49,7 @@ make gen-sdk      # 根据 OpenAPI 更新 TypeScript SDK
 
 ## 数据说明
 
-当前开发版本将规则集、工作空间和登录会话保存在 API 进程内存中，重启后数据会被清空。授权密文单独保存在 Docker 持久化数据卷中。PostgreSQL 与 Redis 是可选基础设施，目前不是规则存储的后端。
+当前开发版本将规则集、工作空间和登录会话保存在 API 进程内存中，后端重启后会恢复默认工作空间和演示规则，现有会话失效。授权密文单独保存在 Docker 持久化数据卷中。PostgreSQL 与 Redis 是可选基础设施，目前不是规则存储的后端。
 
 ## 生产 Compose
 

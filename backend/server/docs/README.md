@@ -67,4 +67,4 @@ The service seeds an `order-risk` demo ruleset in the default workspace at start
 - `internal/service`: ruleset validation and decision orchestration
 - `internal/transport/http`: JSON API, request limits, health endpoints, and error mapping
 
-See [project architecture](../../../docs/architecture.md) for the planned persistence, publishing, decisions, and worker split.
+See [project architecture](../../../docs/architecture.md) for current module boundaries, data lifecycle, deployment limits, and the staged evolution plan.

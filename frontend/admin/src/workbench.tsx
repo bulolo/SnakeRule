@@ -1,12 +1,13 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
   type DragEvent,
 } from "react";
 import { CustomSelect, LoginScreen } from "./components/common";
 import { SettingsDialog } from "./components/settings";
+import { Toaster, toast } from "sonner";
+import { ProjectsPanel, type Project } from "./components/projects";
 import {
   snakeRuleApi,
   type Condition,
@@ -26,13 +27,15 @@ const starter: Ruleset = {
 };
 
 const pretty = (value: unknown) => JSON.stringify(value, null, 2);
-const dateLabel = () =>
-  new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" }).format(
-    new Date(),
-  );
-
+async function readAPIJSON(response: Response, label: string): Promise<any> {
+  const raw = await response.text();
+  let body: any;
+  try { body = raw ? JSON.parse(raw) : {}; }
+  catch { throw new Error(`${label}接口返回非 JSON 响应（HTTP ${response.status}）：${raw.slice(0, 140)}`); }
+  if (!response.ok) throw new Error(body?.error?.message ?? `${label}请求失败（HTTP ${response.status}）`);
+  return body;
+}
 export function Workbench() {
-  const [items, setItems] = useState<Ruleset[]>([]);
   const [selected, setSelected] = useState<Ruleset>(starter);
   const [editor, setEditor] = useState(pretty(starter));
   const [facts, setFacts] = useState(
@@ -43,15 +46,13 @@ export function Workbench() {
   const [notice, setNotice] = useState("");
   const [version, setVersion] = useState("0.1.0");
   const [busy, setBusy] = useState(false);
-  const [screen, setScreen] = useState<"overview" | "list" | "design">(
-    "overview",
-  );
+  const [screen, setScreen] = useState<"overview" | "design" | "projects">(() => {
+    const saved = sessionStorage.getItem("snakerule:screen");
+    return saved === "projects" || saved === "design" ? "projects" : "overview";
+  });
   const [designMode, setDesignMode] = useState<"canvas" | "json">("canvas");
   const [activeRuleId, setActiveRuleId] = useState("");
   const [dragRuleId, setDragRuleId] = useState("");
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("全部状态");
-  const [confirmDeleteRulesetID, setConfirmDeleteRulesetID] = useState("");
   const [authState, setAuthState] = useState<
     "checking" | "anonymous" | "authenticated"
   >("checking");
@@ -60,8 +61,18 @@ export function Workbench() {
   const [settingsArea, setSettingsArea] = useState<
     "platform" | "system" | null
   >(null);
+  const [alertChannels, setAlertChannels] = useState<{ id: string; name: string; type: string; enabled: boolean }[]>([]);
+  const [notifications, setNotifications] = useState<{ id: string; title: string; message: string; created_at: string; read: boolean }[]>([]);
+  const [ruleAlertModalOpen, setRuleAlertModalOpen] = useState(false);
+  const [ruleAlertOverride, setRuleAlertOverride] = useState(false);
+  const [ruleAlertEnabled, setRuleAlertEnabled] = useState(false);
+  const [ruleAlertChannelIDs, setRuleAlertChannelIDs] = useState<string[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [activeWorkspaceID, setActiveWorkspaceID] = useState("default");
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [openProjectID, setOpenProjectID] = useState("default");
+  const [projectDetailOpen, setProjectDetailOpen] = useState(false);
+  const [editorReturnScreen, setEditorReturnScreen] = useState<"projects">("projects");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const refreshWorkspaces = useCallback(async () => {
@@ -69,6 +80,32 @@ export function Workbench() {
     setWorkspaces(result.items);
     setActiveWorkspaceID(result.active_workspace_id);
   }, []);
+
+  const refreshProjects = useCallback(async () => {
+    const response = await fetch("/api/v1/projects");
+    const body = await readAPIJSON(response, "读取项目");
+    setProjects(body.items ?? []);
+    setOpenProjectID(body.active_project_id ?? "default");
+  }, []);
+
+  const refreshAlertChannels = useCallback(async () => {
+    const response = await fetch("/api/v1/system/alert-channels");
+    const body = await readAPIJSON(response, "读取告警渠道");
+    setAlertChannels((body.items ?? []).filter((item: { enabled: boolean }) => item.enabled));
+  }, []);
+
+  const refreshNotifications = useCallback(async () => {
+    const response = await fetch("/api/v1/notifications");
+    const body = await readAPIJSON(response, "读取通知");
+    setNotifications(body.items ?? []);
+  }, []);
+
+  async function markNotificationsRead(id?: string) {
+    const endpoint = id ? `/api/v1/notifications/${encodeURIComponent(id)}/read` : "/api/v1/notifications/read-all";
+    const response = await fetch(endpoint, { method: "POST" });
+    if (!response.ok) { toast.error("更新通知状态失败"); return; }
+    await refreshNotifications();
+  }
 
   const refresh = useCallback(
     async (id?: string) => {
@@ -78,7 +115,6 @@ export function Workbench() {
       ]);
       const meta = await metaResponse.json();
       setVersion(meta.version ?? "0.1.0");
-      setItems(list.items);
       const item =
         list.items.find((candidate) => candidate.id === (id ?? selected.id)) ??
         list.items[0];
@@ -105,8 +141,8 @@ export function Workbench() {
         setEmail(session.user?.email ?? "");
         setIsSuperAdmin(session.user?.is_superadmin ?? false);
         setAuthState("authenticated");
-        Promise.all([refresh(), refreshWorkspaces()]).catch((e: Error) =>
-          setError(`无法连接 API：${e.message}`),
+        Promise.all([refresh(), refreshWorkspaces(), refreshProjects(), refreshAlertChannels(), refreshNotifications()]).catch((e: Error) =>
+          toast.error("无法连接 API", { description: e.message }),
         );
       })
       .catch(() => {
@@ -117,35 +153,39 @@ export function Workbench() {
     };
   }, []);
   useEffect(() => {
+    if (authState !== "authenticated") return;
+    const timer = window.setInterval(() => { void refreshNotifications().catch(() => undefined); }, 15000);
+    return () => window.clearInterval(timer);
+  }, [authState, refreshNotifications]);
+  useEffect(() => {
+    const closeMenus = (event: PointerEvent) => {
+      document.querySelectorAll<HTMLElement>(".notification-menu[open], .user-menu[open]").forEach((menu) => {
+        if (!menu.contains(event.target as Node)) menu.removeAttribute("open");
+      });
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") document.querySelectorAll<HTMLElement>(".notification-menu[open], .user-menu[open]").forEach((menu) => menu.removeAttribute("open"));
+    };
+    document.addEventListener("pointerdown", closeMenus);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => { document.removeEventListener("pointerdown", closeMenus); document.removeEventListener("keydown", closeOnEscape); };
+  }, []);
+  useEffect(() => {
     const onUnauthorized = () => {
       setAuthState("anonymous");
       setEmail("");
       setIsSuperAdmin(false);
-      setItems([]);
       setDecision(null);
-      setScreen("list");
+      setScreen("projects");
     };
     window.addEventListener("snakerule:unauthorized", onUnauthorized);
     return () =>
       window.removeEventListener("snakerule:unauthorized", onUnauthorized);
   }, []);
 
-  const filtered = useMemo(
-    () =>
-      items.filter((item) => {
-        const matches = `${item.name} ${item.id}`
-          .toLowerCase()
-          .includes(query.toLowerCase());
-        return (
-          matches &&
-          (statusFilter === "全部状态" ||
-            (statusFilter === "启用中" ? item.enabled : !item.enabled))
-        );
-      }),
-    [items, query, statusFilter],
-  );
+  useEffect(() => { sessionStorage.setItem("snakerule:screen", screen); }, [screen]);
 
-  function open(item: Ruleset) {
+  function open(item: Ruleset, returnScreen: "projects" = "projects") {
     setSelected(item);
     setEditor(pretty(item));
     setDecision(null);
@@ -153,6 +193,7 @@ export function Workbench() {
     setNotice("");
     setDesignMode("canvas");
     setActiveRuleId(item.rules[0]?.id ?? "");
+    setEditorReturnScreen(returnScreen);
     setScreen("design");
   }
   async function switchWorkspace(workspaceID: string) {
@@ -162,9 +203,11 @@ export function Workbench() {
     try {
       await snakeRuleApi.setActiveWorkspace(workspaceID);
       setActiveWorkspaceID(workspaceID);
-      setScreen("list");
+      setOpenProjectID("default");
+      setScreen("projects");
       setDecision(null);
       setActiveRuleId("");
+      await refreshProjects();
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "切换工作空间失败");
@@ -172,16 +215,20 @@ export function Workbench() {
       setBusy(false);
     }
   }
-  function create() {
-    const item: Ruleset = { ...starter, id: `ruleset-${Date.now()}` };
-    setSelected(item);
-    setEditor(pretty(item));
-    setDecision(null);
-    setNotice("新规则集尚未保存");
-    setError("");
-    setDesignMode("canvas");
-    setActiveRuleId("");
-    setScreen("design");
+  async function switchProject(id: string) {
+    if (!id || id === openProjectID) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch("/api/v1/projects/active", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_id: id }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body?.error?.message ?? "切换项目失败");
+      setOpenProjectID(id); setDecision(null); setActiveRuleId(""); await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "切换项目失败"); }
+    finally { setBusy(false); }
+  }
+  async function create(name = "新规则集"): Promise<Ruleset> {
+    const item: Ruleset = { ...starter, id: `ruleset-${Date.now()}`, name };
+    return snakeRuleApi.saveRuleset(item);
   }
   function updateRuleset(change: (value: Ruleset) => Ruleset) {
     try {
@@ -286,6 +333,23 @@ export function Workbench() {
       ),
     }));
   }
+  function openRuleAlertConfig(rule: Rule) {
+    const policy = rule.alert ?? selected.alert;
+    setRuleAlertOverride(Boolean(rule.alert));
+    setRuleAlertEnabled(policy?.enabled ?? false);
+    setRuleAlertChannelIDs(policy?.channel_ids ?? []);
+    setRuleAlertModalOpen(true);
+  }
+  function saveRuleAlertConfig() {
+    updateActiveRule((rule) => ({
+      ...rule,
+      alert: ruleAlertOverride
+        ? { enabled: ruleAlertEnabled, channel_ids: ruleAlertEnabled ? ruleAlertChannelIDs : [] }
+        : undefined,
+    }));
+    setRuleAlertModalOpen(false);
+    toast.info("通知设置已应用到草稿，请保存规则集后生效");
+  }
   function patchFirstCondition(
     condition: Condition,
     patch: Partial<Condition>,
@@ -314,6 +378,7 @@ export function Workbench() {
       ? condition
       : (condition.all?.[0] ?? condition.any?.[0] ?? {});
   const activeRule = selected.rules?.find((rule) => rule.id === activeRuleId);
+  const activeRuleAlert = activeRule?.alert ?? selected.alert;
   const activeCondition = activeRule
     ? conditionOf(activeRule.conditions)
     : undefined;
@@ -336,9 +401,11 @@ export function Workbench() {
       setSelected(saved);
       setEditor(pretty(saved));
       setNotice("规则集已保存");
-      await refresh(saved.id);
+      toast.success("规则集已保存");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "保存失败");
+      const message = e instanceof Error ? e.message : "保存失败";
+      setError(message);
+      toast.error("保存规则集失败", { description: message });
     } finally {
       setBusy(false);
     }
@@ -348,7 +415,6 @@ export function Workbench() {
     setError("");
     try {
       await snakeRuleApi.deleteRuleset(item.id);
-      setConfirmDeleteRulesetID("");
       setDecision(null);
       await refresh();
       setNotice(`已删除规则集“${item.name}”`);
@@ -365,13 +431,13 @@ export function Workbench() {
     try {
       const value = JSON.parse(editor) as Ruleset;
       const input = JSON.parse(facts);
-      setDecision(
-        await snakeRuleApi.evaluate({
-          rulesetId: value.id,
-          facts: input,
-          ruleset: value,
-        }),
-      );
+      const result = await snakeRuleApi.evaluate({
+        rulesetId: value.id,
+        facts: input,
+        ruleset: value,
+      }, "designer");
+      setDecision(result);
+      await refreshNotifications();
     } catch (e) {
       setError(e instanceof Error ? e.message : "运行失败");
     } finally {
@@ -388,9 +454,8 @@ export function Workbench() {
       setEmail("");
       setIsSuperAdmin(false);
       setSettingsArea(null);
-      setItems([]);
       setDecision(null);
-      setScreen("list");
+      setScreen("overview");
     } catch (e) {
       setError(e instanceof Error ? e.message : "退出失败，请重试。");
     } finally {
@@ -412,7 +477,7 @@ export function Workbench() {
           setEmail(email);
           setIsSuperAdmin(true);
           setAuthState("authenticated");
-          Promise.all([refresh(), refreshWorkspaces()]).catch((e: Error) =>
+          Promise.all([refresh(), refreshWorkspaces(), refreshProjects()]).catch((e: Error) =>
             setError(`无法连接 API：${e.message}`),
           );
         }}
@@ -443,19 +508,11 @@ export function Workbench() {
           概览
         </button>
         <button
-          className={`side-nav ${screen !== "overview" ? "side-nav-active" : ""}`}
-          title={sidebarCollapsed ? "规则管理" : undefined}
-          onClick={() => setScreen("list")}
+          className={`side-nav ${screen === "projects" || screen === "design" ? "side-nav-active" : ""}`}
+          title={sidebarCollapsed ? "项目" : undefined}
+          onClick={() => { setProjectDetailOpen(false); setScreen("projects"); }}
         >
-          <span>
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M4 4.5h12M4 10h12M4 15.5h12" />
-              <circle cx="2.5" cy="4.5" r=".6" />
-              <circle cx="2.5" cy="10" r=".6" />
-              <circle cx="2.5" cy="15.5" r=".6" />
-            </svg>
-          </span>{" "}
-          规则管理
+          <span><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h5l1.5 2H17v8H3zM3 5.5V4h5l1.5 1.5" /></svg></span>{" "}项目
         </button>
         <div className="sidebar-footer">
           <div className="sidebar-note">
@@ -475,7 +532,7 @@ export function Workbench() {
           </button>
         </div>
       </aside>
-      <main className="main">
+      <main className={`main ${screen === "projects" && projectDetailOpen ? "main-project-detail" : ""}`}>
         <header className="topbar">
           <div className="topbar-context">
             <CustomSelect
@@ -488,13 +545,7 @@ export function Workbench() {
               }))}
               onChange={(value) => void switchWorkspace(value)}
             />
-            <span>
-              {screen === "overview"
-                ? "概览"
-                : screen === "list"
-                  ? "规则管理　/　规则集"
-                  : `规则管理　/　${selected.name}`}
-            </span>
+            <span>{screen === "overview" ? "概览" : screen === "projects" ? "项目" : selected.name}</span>
           </div>
           <div className="topbar-actions">
             {isSuperAdmin && (
@@ -511,6 +562,12 @@ export function Workbench() {
             >
               ⚙ 系统设置
             </button>
+            <details className="notification-menu">
+              <summary aria-label="站内通知" title="站内通知"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 8a5.5 5.5 0 0 0-11 0c0 6-2 6-2 7.5h15C17.5 14 15.5 14 15.5 8ZM8 18h4"/></svg>{notifications.some((item) => !item.read) && <i>{notifications.filter((item) => !item.read).length}</i>}</summary>
+              <section className="notification-popover"><header><b>站内通知</b><button className="quiet" disabled={!notifications.some((item) => !item.read)} onClick={(event) => { event.preventDefault(); void markNotificationsRead(); }}>全部已读</button></header>
+                {notifications.length ? notifications.slice(0, 20).map((item) => <article key={item.id} className={item.read ? "is-read" : "is-unread"} onClick={() => !item.read && void markNotificationsRead(item.id)}><b>{item.title}</b><p>{item.message}</p><small>{new Date(item.created_at).toLocaleString("zh-CN")}</small></article>) : <p className="notification-empty">暂无通知</p>}
+              </section>
+            </details>
             <details className="user-menu">
               <summary className="topbar-user" title={`${email} · 超级管理员`}>
                 <span className="avatar">
@@ -543,17 +600,17 @@ export function Workbench() {
             </details>
           </div>
         </header>
-        <div className="content">
+        <div className={`content ${screen === "projects" && projectDetailOpen ? "content-project-detail" : ""}`}>
           {screen === "overview" ? (
             <>
               <section className="title-row">
                 <div>
                   <small className="eyebrow">WORKSPACE OVERVIEW</small>
                   <h1>概览</h1>
-                  <p>当前工作空间的规则资产、运行状态与快捷入口。</p>
+                  <p>工作空间中的项目与平台入口。</p>
                 </div>
-                <button className="primary create-button" onClick={create}>
-                  ＋ 新建规则集
+                <button className="primary create-button" onClick={() => setScreen("projects")}>
+                  查看项目
                 </button>
               </section>
               <section className="metrics list-metrics">
@@ -572,29 +629,27 @@ export function Workbench() {
                   </em>
                 </div>
                 <div>
-                  <small>规则集</small>
-                  <b>{items.length}</b>
-                  <em>当前空间中的全部规则集</em>
+                  <small>项目</small>
+                  <b>{projects.length}</b>
+                  <em>当前工作空间</em>
                 </div>
                 <div>
-                  <small>启用规则集</small>
-                  <b>{items.filter((item) => item.enabled).length}</b>
-                  <em>可参与决策求值</em>
+                  <small>默认项目</small>
+                  <b>{projects.some((project) => project.id === "default") ? "已就绪" : "未创建"}</b>
+                  <em>工作空间基础项目</em>
                 </div>
                 <div>
-                  <small>规则总数</small>
-                  <b>
-                    {items.reduce((sum, item) => sum + item.rules.length, 0)}
-                  </b>
-                  <em>引擎版本 · v{version}</em>
+                  <small>平台版本</small>
+                  <b>v{version}</b>
+                  <em>SnakeRule</em>
                 </div>
               </section>
               <section className="overview-shortcuts">
-                <button onClick={() => setScreen("list")}>
+                <button onClick={() => setScreen("projects")}>
                   <span className="shortcut-icon rules-shortcut">↗</span>
                   <span>
-                    <b>规则管理</b>
-                    <small>查看、编辑和调试规则集</small>
+                    <b>项目</b>
+                    <small>查看工作空间内的项目</small>
                   </span>
                   <i>→</i>
                 </button>
@@ -606,285 +661,32 @@ export function Workbench() {
                   </span>
                   <i>→</i>
                 </button>
-                <div className="overview-health">
-                  <span className="health-dot" />
-                  <span>
-                    <b>平台服务正常</b>
-                    <small>管理端已连接规则引擎 API</small>
-                  </span>
-                </div>
+                <div className="overview-health"><span className="health-dot" /><span><b>规则属于项目</b><small>进入项目后查看和管理规则</small></span></div>
               </section>
               <section className="list-panel">
                 <div className="list-toolbar">
                   <div>
-                    <b>最近规则集</b>
-                    <small>共 {items.length} 个</small>
+                    <b>工作空间项目</b>
+                    <small>共 {projects.length} 个</small>
                   </div>
-                  <button className="quiet" onClick={() => setScreen("list")}>
-                    查看全部规则集　→
+                  <button className="quiet" onClick={() => setScreen("projects")}>
+                    管理项目　→
                   </button>
                 </div>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>规则集名称</th>
-                        <th>规则数</th>
-                        <th>状态</th>
-                        <th>版本</th>
-                        <th />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.slice(0, 5).map((item) => (
-                        <tr key={item.id} onClick={() => open(item)}>
-                          <td>
-                            <div className="table-name">
-                              <span>{(item.name || "R")[0]}</span>
-                              <div>
-                                <b>{item.name}</b>
-                                <small>{item.id}</small>
-                              </div>
-                            </div>
-                          </td>
-                          <td>{item.rules.length} 条</td>
-                          <td>
-                            <span
-                              className={
-                                item.enabled
-                                  ? "status-pill enabled"
-                                  : "status-pill"
-                              }
-                            >
-                              <i />
-                              {item.enabled ? "启用中" : "已停用"}
-                            </span>
-                          </td>
-                          <td>
-                            <code>{item.version || "—"}</code>
-                          </td>
-                          <td>
-                            <button className="row-action">
-                              设计 <span>→</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {!items.length && (
-                        <tr>
-                          <td colSpan={5}>
-                            <div className="table-empty">
-                              <b>当前空间还没有规则集</b>
-                              <small>新建规则集，开始配置决策规则。</small>
-                              <button className="secondary" onClick={create}>
-                                ＋ 新建规则集
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <div className="overview-project-list">{projects.map((project) => <button key={project.id} className="overview-project-row" onClick={() => { void switchProject(project.id).then(() => { setProjectDetailOpen(true); setScreen("projects"); }); }}><span className="project-mark">{project.name.slice(0, 1)}</span><span><b>{project.name}</b><small>{project.slug} · {project.description || "暂无说明"}</small></span><strong>进入项目　→</strong></button>)}{!projects.length && <div className="table-empty"><b>此工作空间还没有项目</b><button className="secondary" onClick={() => setScreen("projects")}>查看项目</button></div>}</div>
               </section>
             </>
-          ) : screen === "list" ? (
-            <>
-              <section className="title-row">
-                <div>
-                  <small className="eyebrow">RULE MANAGEMENT</small>
-                  <h1>规则集</h1>
-                  <p>集中管理规则定义，检查状态并进入设计与调试。</p>
-                </div>
-                <button className="primary create-button" onClick={create}>
-                  ＋ 新建规则集
-                </button>
-              </section>
-              <section className="metrics list-metrics">
-                <div>
-                  <small>规则集总数</small>
-                  <b>{items.length}</b>
-                  <em>当前工作空间</em>
-                </div>
-                <div>
-                  <small>启用中</small>
-                  <b>{items.filter((item) => item.enabled).length}</b>
-                  <em>可参与决策</em>
-                </div>
-                <div>
-                  <small>规则总数</small>
-                  <b>
-                    {items.reduce((sum, item) => sum + item.rules.length, 0)}
-                  </b>
-                  <em>全部规则集</em>
-                </div>
-                <div>
-                  <small>引擎版本</small>
-                  <b className="version-metric">v{version}</b>
-                  <em>当前服务</em>
-                </div>
-              </section>
-              <section className="list-panel">
-                <div className="list-toolbar">
-                  <div>
-                    <b>全部规则集</b>
-                    <small>共 {filtered.length} 个</small>
-                  </div>
-                  <div className="filters">
-                    <label className="search-box">
-                      <span>⌕</span>
-                      <input
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder="搜索名称或 ID"
-                      />
-                    </label>
-                    <CustomSelect
-                      ariaLabel="状态筛选"
-                      value={statusFilter}
-                      options={["全部状态", "启用中", "已停用"].map(
-                        (label) => ({ value: label, label }),
-                      )}
-                      onChange={setStatusFilter}
-                    />
-                    <button
-                      className="quiet refresh-button"
-                      onClick={() =>
-                        refresh().catch((e: Error) => setError(e.message))
-                      }
-                    >
-                      ↻ 刷新
-                    </button>
-                  </div>
-                </div>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>规则集名称</th>
-                        <th>规则数</th>
-                        <th>状态</th>
-                        <th>版本</th>
-                        <th>最近更新</th>
-                        <th />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((item) => (
-                        <tr key={item.id} onClick={() => open(item)}>
-                          <td>
-                            <div className="table-name">
-                              <span>{(item.name || "R")[0]}</span>
-                              <div>
-                                <b>{item.name}</b>
-                                <small>{item.id}</small>
-                              </div>
-                            </div>
-                          </td>
-                          <td>{item.rules.length} 条</td>
-                          <td>
-                            <span
-                              className={
-                                item.enabled
-                                  ? "status-pill enabled"
-                                  : "status-pill"
-                              }
-                            >
-                              <i />
-                              {item.enabled ? "启用中" : "已停用"}
-                            </span>
-                          </td>
-                          <td>
-                            <code>{item.version || "—"}</code>
-                          </td>
-                          <td>{dateLabel()}</td>
-                          <td>
-                            {confirmDeleteRulesetID === item.id ? (
-                              <div
-                                className="ruleset-confirm-actions"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <span>确认删除？</span>
-                                <button
-                                  className="ruleset-confirm-cancel"
-                                  disabled={busy}
-                                  onClick={() => setConfirmDeleteRulesetID("")}
-                                >
-                                  取消
-                                </button>
-                                <button
-                                  className="ruleset-confirm-delete"
-                                  disabled={busy}
-                                  onClick={() => void removeRuleset(item)}
-                                >
-                                  {busy ? "删除中…" : "删除"}
-                                </button>
-                              </div>
-                            ) : (
-                              <div
-                                className="ruleset-row-actions"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <button
-                                  className="row-action"
-                                  onClick={() => open(item)}
-                                >
-                                  设计 <span>→</span>
-                                </button>
-                                <button
-                                  className="ruleset-delete-trigger"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    setConfirmDeleteRulesetID(item.id)
-                                  }
-                                >
-                                  删除
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                      {!filtered.length && (
-                        <tr>
-                          <td colSpan={6}>
-                            <div className="table-empty">
-                              <span>⌕</span>
-                              <b>
-                                {items.length
-                                  ? "没有匹配的规则集"
-                                  : "还没有规则集"}
-                              </b>
-                              <small>
-                                {items.length
-                                  ? "调整搜索词或状态筛选。"
-                                  : "新建规则集，开始配置你的第一条决策规则。"}
-                              </small>
-                              {!items.length && (
-                                <button className="secondary" onClick={create}>
-                                  ＋ 新建规则集
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            </>
+          ) : screen === "projects" ? (
+            <ProjectsPanel projects={projects} projectID={openProjectID} activeWorkspaceID={activeWorkspaceID} alertChannels={alertChannels} projectDetailOpen={projectDetailOpen} setProjectDetailOpen={setProjectDetailOpen} onRefresh={refreshProjects} onSelect={switchProject} onCreateRuleset={create} onDeleteRuleset={removeRuleset} onOpenRuleset={(ruleset) => open(ruleset, "projects")} />
           ) : (
-            <>
-              <div className="crumb-row">
-                <button className="back-link" onClick={() => setScreen("list")}>
-                  ← 返回规则集
-                </button>
-                <span>/</span>
-                <span>{selected.name || "未命名规则集"}</span>
-                <span className={selected.enabled ? "tag-on" : "tag-off"}>
-                  {selected.enabled ? "启用中" : "已停用"}
-                </span>
+            <div className="designer-modal-overlay">
+              <div className="designer-modal" role="dialog" aria-modal="true" aria-label={`规则设计器：${selected.name || "未命名规则集"}`}>
+              <div className="designer-modal-heading">
+                <div className="crumb-row">
+                  <span>规则设计器</span><span>/</span><b>{selected.name || "未命名规则集"}</b>
+                  <span className={selected.enabled ? "tag-on" : "tag-off"}>{selected.enabled ? "启用中" : "已停用"}</span>
+                </div>
+                <button className="quiet" onClick={() => setScreen(editorReturnScreen)} aria-label="关闭规则设计器">×</button>
               </div>
               <section className="title-row design-title">
                 <div>
@@ -896,14 +698,8 @@ export function Workbench() {
                   </p>
                 </div>
                 <div className="title-actions">
-                  <button
-                    className="secondary"
-                    onClick={() => setScreen("list")}
-                  >
-                    取消
-                  </button>
                   <button className="primary" disabled={busy} onClick={save}>
-                    保存规则
+                    {busy ? "保存中…" : "保存规则集"}
                   </button>
                 </div>
               </section>
@@ -1296,6 +1092,15 @@ export function Workbench() {
                         >
                           ＋ 添加标签动作
                         </button>
+                        <div className="inspector-divider" />
+                        <div className="inspector-section-title">
+                          命中通知 <small>{activeRule.alert ? activeRule.alert.enabled ? "单条规则覆盖" : "单条规则关闭" : selected.alert?.enabled ? "继承规则集默认" : "未配置"}</small>
+                        </div>
+                        {activeRuleAlert?.enabled && <div className="rule-alert-summary"><b>{activeRule.alert ? "此规则的通知渠道" : "继承的默认渠道"}</b><div>{activeRuleAlert.channel_ids.map((id) => alertChannels.find((channel) => channel.id === id)?.name ?? id).map((name) => <span key={name}>{name}</span>)}</div></div>}
+                        <button className="rule-alert-open" onClick={() => openRuleAlertConfig(activeRule)}>
+                          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 14.5h10l-1.2-1.6V8.5a3.8 3.8 0 0 0-7.6 0v4.4L5 14.5Z"/><path d="M8 16.2h4"/></svg>
+                          {activeRule.alert ? "编辑单条规则覆盖" : "设置单条规则覆盖"}
+                        </button>
                       </>
                     ) : (
                       <div className="inspector-empty">
@@ -1304,16 +1109,6 @@ export function Workbench() {
                         <small>在画布点击节点，编辑条件和动作。</small>
                       </div>
                     )}
-                    <div className="inspector-save">
-                      <span>{notice || "更改尚未保存"}</span>
-                      <button
-                        className="primary"
-                        disabled={busy}
-                        onClick={save}
-                      >
-                        保存规则
-                      </button>
-                    </div>
                   </aside>
                 </div>
               ) : (
@@ -1345,9 +1140,6 @@ export function Workbench() {
                   />
                   <div className="panel-bottom">
                     <span>{notice || "修改后保存以更新规则集"}</span>
-                    <button className="primary" disabled={busy} onClick={save}>
-                      保存规则集
-                    </button>
                   </div>
                 </section>
               )}
@@ -1397,21 +1189,29 @@ export function Workbench() {
                   )}
                 </section>
               </div>
-            </>
+              </div>
+            </div>
           )}
           {error && (
             <div className="error-message" role="alert">
               {error}
             </div>
           )}
-          {screen === "list" && notice && (
-            <div className="success-message" role="status">
-              {notice}
-            </div>
-          )}
           <footer>SnakeRule　·　确定性规则求值　·　v{version}</footer>
         </div>
       </main>
+      {ruleAlertModalOpen && activeRule && <div className="project-modal-overlay" role="presentation"><section className="project-modal project-config-modal" role="dialog" aria-modal="true" aria-labelledby="rule-alert-title">
+        <header><div><small>RULE NOTIFICATION</small><h2 id="rule-alert-title">命中通知</h2><p>「{activeRule.name}」默认继承规则集设置，也可以单独覆盖。</p></div><button className="quiet" onClick={() => setRuleAlertModalOpen(false)} aria-label="关闭">×</button></header>
+        <div className="rule-alert-mode">
+          <label><input type="radio" name="rule-alert-mode" checked={!ruleAlertOverride} onChange={() => setRuleAlertOverride(false)} /><span><b>继承规则集默认</b><small>{selected.alert?.enabled ? `已启用 · ${selected.alert.channel_ids.map((id) => alertChannels.find((channel) => channel.id === id)?.name ?? id).join("、")}` : "当前规则集未设置默认通知"}</small></span></label>
+          <label><input type="radio" name="rule-alert-mode" checked={ruleAlertOverride} onChange={() => setRuleAlertOverride(true)} /><span><b>自定义此规则</b><small>使用单独的启用状态和通知渠道</small></span></label>
+        </div>
+        {ruleAlertOverride && <>
+          <label className="project-toggle"><input type="checkbox" checked={ruleAlertEnabled} onChange={(event) => setRuleAlertEnabled(event.target.checked)} /><span><b>启用此规则的告警</b><small>关闭后，此规则不会触发通知</small></span></label>
+          {ruleAlertEnabled && <div className="project-check-group"><b>通知渠道</b>{alertChannels.length ? alertChannels.map((channel) => <label key={channel.id}><input type="checkbox" checked={ruleAlertChannelIDs.includes(channel.id)} onChange={() => setRuleAlertChannelIDs((items) => items.includes(channel.id) ? items.filter((id) => id !== channel.id) : [...items, channel.id])} /><span>{channel.name}<small>{channel.type}</small></span></label>) : <small>暂无可用渠道，请先在「系统设置 → 告警渠道」添加并启用。</small>}</div>}
+        </>}
+        <footer><button className="quiet" onClick={() => setRuleAlertModalOpen(false)}>取消</button><button className="primary" disabled={ruleAlertOverride && ruleAlertEnabled && ruleAlertChannelIDs.length === 0} onClick={saveRuleAlertConfig}>应用设置</button></footer>
+      </section></div>}
       {settingsArea && (
         <SettingsDialog
           area={settingsArea}
@@ -1420,9 +1220,11 @@ export function Workbench() {
           workspaces={workspaces}
           activeWorkspaceID={activeWorkspaceID}
           onWorkspaceRefresh={refreshWorkspaces}
+          onAlertChannelRefresh={refreshAlertChannels}
           onClose={() => setSettingsArea(null)}
         />
       )}
+      <Toaster position="top-right" richColors duration={4500} closeButton />
     </div>
   );
 }

@@ -16,7 +16,7 @@ export default defineConfig({
     ],
     sidebar: {
       '/guide/': [
-        { text: '开始使用', items: [{ text: '快速开始', link: '/guide/quick-start' }, { text: '项目结构', link: '/guide/project-structure' }] },
+        { text: '开始使用', items: [{ text: '快速开始', link: '/guide/quick-start' }, { text: '管理工作台', link: '/guide/admin-console' }, { text: '项目结构', link: '/guide/project-structure' }] },
       ],
       '/engine/': [
         { text: '规则引擎', items: [{ text: '规则集与条件', link: '/engine/rulesets' }, { text: '决策试运行', link: '/engine/evaluation' }] },

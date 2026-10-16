@@ -266,6 +266,121 @@
         }
       }
     },
+    "/api/v1/system/alert-channels": {
+      "get": {
+        "operationId": "listAlertChannels",
+        "responses": {
+          "200": {
+            "description": "Alert channels",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AlertChannel"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAlertChannel",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertChannelInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert channel created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertChannel"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system/alert-channels/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "updateAlertChannel",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlertChannelInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Alert channel updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertChannel"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAlertChannel",
+        "responses": {
+          "204": {
+            "description": "Alert channel deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/system/alert-channels/{id}/test": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "testAlertChannel",
+        "responses": {
+          "200": {
+            "description": "Test notification sent"
+          }
+        }
+      }
+    },
     "/api/v1/workspaces": {
       "get": {
         "operationId": "listWorkspaces",
@@ -386,6 +501,359 @@
         "responses": {
           "204": {
             "description": "Workspace deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "responses": {
+          "200": {
+            "description": "Projects in current workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Project"
+                      }
+                    },
+                    "active_project_id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createProject",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/active": {
+      "put": {
+        "operationId": "setActiveProject",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActiveProjectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Active project changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveProjectResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "operationId": "updateProject",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Project updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteProject",
+        "responses": {
+          "204": {
+            "description": "Project and its rules deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{id}/api-keys": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listProjectKeys",
+        "responses": {
+          "200": {
+            "description": "Project API keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProjectKey"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createProjectKey",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectKeyInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "API key secret or JWT token is returned once and cannot be retrieved later.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "item": {
+                      "$ref": "#/components/schemas/ProjectKey"
+                    },
+                    "secret": {
+                      "type": "string",
+                      "description": "API key returned only when type is apikey."
+                    },
+                    "token": {
+                      "type": "string",
+                      "description": "JWT returned only when type is jwt."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{id}/api-keys/{keyID}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "keyID",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "delete": {
+        "operationId": "deleteProjectKey",
+        "responses": {
+          "204": {
+            "description": "Project API key revoked"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "listNotifications",
+        "responses": {
+          "200": {
+            "description": "Notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Notification"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "operationId": "readAllNotifications",
+        "responses": {
+          "200": {
+            "description": "All notifications marked as read"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{id}/read": {
+      "post": {
+        "operationId": "readNotification",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification marked as read"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{id}/invocations": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listProjectInvocations",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "is_pager",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ],
+              "default": 1,
+              "description": "0 returns all retained items; 1 enables pagination."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent invocation logs for the project; facts and credentials are not stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvocationListResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -563,6 +1031,9 @@
             "items": {
               "$ref": "#/components/schemas/Action"
             }
+          },
+          "alert": {
+            "$ref": "#/components/schemas/RuleAlert"
           }
         }
       },
@@ -590,6 +1061,9 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "alert": {
+            "$ref": "#/components/schemas/RuleAlert"
           },
           "rules": {
             "type": "array",
@@ -683,6 +1157,76 @@
           }
         }
       },
+      "AlertChannel": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "type",
+          "url",
+          "enabled",
+          "has_secret"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "webhook",
+              "wecom",
+              "dingtalk",
+              "feishu",
+              "internal"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "has_secret": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AlertChannelInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "url"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "webhook",
+              "wecom",
+              "dingtalk",
+              "feishu"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "secret": {
+            "type": "string",
+            "description": "Optional signing secret or Bearer token; omitted on read."
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
       "Workspace": {
         "type": "object",
         "required": [
@@ -767,6 +1311,329 @@
         "properties": {
           "active_workspace_id": {
             "type": "string"
+          }
+        }
+      },
+      "Project": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string",
+            "description": "项目图标标记"
+          }
+        }
+      },
+      "ProjectInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "template": {
+            "type": "string",
+            "enum": [
+              "",
+              "ecommerce"
+            ]
+          },
+          "icon": {
+            "type": "string",
+            "description": "项目图标标记"
+          }
+        }
+      },
+      "ProjectKey": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "prefix",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "apikey",
+              "jwt"
+            ],
+            "description": "Credential type; older credentials without a type are treated as apikey."
+          }
+        }
+      },
+      "CreateProjectKeyInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "apikey",
+              "jwt"
+            ],
+            "default": "apikey"
+          }
+        }
+      },
+      "ActiveProjectRequest": {
+        "type": "object",
+        "required": [
+          "project_id"
+        ],
+        "properties": {
+          "project_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ActiveProjectResponse": {
+        "type": "object",
+        "required": [
+          "active_project_id"
+        ],
+        "properties": {
+          "active_project_id": {
+            "type": "string"
+          }
+        }
+      },
+      "RuleAlert": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "channel_ids"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "channel_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "message",
+          "project",
+          "ruleset",
+          "created_at",
+          "read"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "ruleset": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "read": {
+            "type": "boolean"
+          }
+        }
+      },
+      "InvocationLog": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspace_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "ruleset_id": {
+            "type": "string"
+          },
+          "credential_type": {
+            "type": "string",
+            "enum": [
+              "session",
+              "apikey",
+              "jwt"
+            ]
+          },
+          "status_code": {
+            "type": "integer"
+          },
+          "matched": {
+            "type": "boolean"
+          },
+          "hit_rules": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rule_id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "designer_simulation",
+              "project_api",
+              "management"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "project_id",
+          "source",
+          "credential_type",
+          "status_code",
+          "matched",
+          "duration_ms",
+          "created_at"
+        ]
+      },
+      "Pagination": {
+        "type": "object",
+        "required": [
+          "is_pager",
+          "page",
+          "size",
+          "total"
+        ],
+        "properties": {
+          "is_pager": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "page": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        }
+      },
+      "InvocationListResponse": {
+        "type": "object",
+        "required": [
+          "list",
+          "pagination"
+        ],
+        "properties": {
+          "list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvocationLog"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "InvocationListQuery": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "default": 1
+          },
+          "size": {
+            "type": "integer",
+            "default": 20
+          },
+          "is_pager": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1
           }
         }
       }

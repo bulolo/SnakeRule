@@ -1,0 +1,23 @@
+package domain
+
+import "time"
+
+// InvocationLog records a rule evaluation without storing its facts or credential.
+type InvocationLog struct {
+	ID             string              `json:"id"`
+	WorkspaceID    string              `json:"workspace_id"`
+	ProjectID      string              `json:"project_id"`
+	RulesetID      string              `json:"ruleset_id,omitempty"`
+	Source         string              `json:"source"`
+	CredentialType string              `json:"credential_type"`
+	StatusCode     int                 `json:"status_code"`
+	Matched        bool                `json:"matched"`
+	HitRules       []InvocationHitRule `json:"hit_rules,omitempty"`
+	DurationMS     int64               `json:"duration_ms"`
+	CreatedAt      time.Time           `json:"created_at"`
+}
+
+type InvocationHitRule struct {
+	RuleID string `json:"rule_id"`
+	Name   string `json:"name"`
+}

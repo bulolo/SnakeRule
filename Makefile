@@ -2,7 +2,7 @@
 
 GO ?= go
 DEV_COMPOSE = docker compose --env-file backend/.env -f docker-compose.dev.yml
-PROD_COMPOSE = docker compose -p snakerule-prod --env-file deploy/.env.prod -f docker-compose.prod.yml
+PROD_COMPOSE = docker compose -p snakerule-prod --project-directory . --env-file deploy/.env.prod -f deploy/docker-compose.prod.yml
 SERVER_DIR = backend/server
 APP_PORT ?= $(or $(SERVER_PORT),$(shell sed -n 's/^SERVER_PORT=//p' backend/.env 2>/dev/null | tail -n 1),8080)
 ADMIN_PORT ?= $(or $(ADMIN_PORT_OVERRIDE),$(shell sed -n 's/^ADMIN_PORT=//p' backend/.env 2>/dev/null | tail -n 1),3000)

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,15 +34,59 @@ func New() (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize license manager: %w", err)
 	}
-	store := repo.NewMemoryRulesetRepository()
-	workspaceStore := repo.NewMemoryWorkspaceRepository()
+	stateDir := filepath.Join(filepath.Dir(cfg.License.StorePath), "state")
+	store, err := repo.NewPersistentRulesetRepository(filepath.Join(stateDir, "rulesets.json"))
+	if err != nil {
+		return nil, fmt.Errorf("load rulesets: %w", err)
+	}
+	workspaceStore, err := repo.NewPersistentWorkspaceRepository(filepath.Join(stateDir, "workspaces.json"))
+	if err != nil {
+		return nil, fmt.Errorf("load workspaces: %w", err)
+	}
+	projectStore, err := repo.NewPersistentProjectRepository(filepath.Join(stateDir, "projects.json"))
+	if err != nil {
+		return nil, fmt.Errorf("load projects: %w", err)
+	}
+	projectKeyStore, err := repo.NewPersistentProjectKeyRepository(filepath.Join(stateDir, "project-keys.json"))
+	if err != nil {
+		return nil, fmt.Errorf("load project keys: %w", err)
+	}
+	alertChannelStore, err := repo.NewPersistentAlertChannelRepository(filepath.Join(stateDir, "alert-channels.json"))
+	if err != nil {
+		return nil, fmt.Errorf("load alert channels: %w", err)
+	}
+	notificationStore, err := repo.NewPersistentNotificationRepository(filepath.Join(stateDir, "notifications.json"))
+	if err != nil {
+		return nil, fmt.Errorf("load notifications: %w", err)
+	}
+	invocationLogStore, err := repo.NewPersistentInvocationLogRepository(filepath.Join(stateDir, "invocations.json"))
+	if err != nil {
+		return nil, fmt.Errorf("load invocation logs: %w", err)
+	}
+	jwtSigningKey, err := loadOrCreateJWTSigningKey(filepath.Join(stateDir, "jwt-signing.key"))
+	if err != nil {
+		return nil, fmt.Errorf("load JWT signing key: %w", err)
+	}
+	if _, err := alertChannelStore.Get(context.Background(), "internal-inbox"); err == repo.ErrNotFound {
+		if err := alertChannelStore.Save(context.Background(), domain.AlertChannel{ID: "internal-inbox", Name: "站内通知", Type: "internal", Enabled: true, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}); err != nil {
+			return nil, fmt.Errorf("seed internal notification channel: %w", err)
+		}
+	}
 	workspaces := service.NewWorkspaces(workspaceStore)
 	rulesets := service.NewRulesets(store)
 	engine := service.NewEngine(store)
-	if err := rulesets.Save(repo.WithWorkspace(context.Background(), repo.DefaultWorkspaceID), demoRuleset()); err != nil {
-		return nil, fmt.Errorf("seed demo ruleset: %w", err)
+	seedContext := repo.WithProject(repo.WithWorkspace(context.Background(), repo.DefaultWorkspaceID), repo.DefaultProjectID)
+	if _, err := store.Get(seedContext, "order-risk"); err == repo.ErrNotFound {
+		err = rulesets.Save(seedContext, demoRuleset())
+		if err != nil {
+			return nil, fmt.Errorf("seed demo ruleset: %w", err)
+		}
 	}
-	handler := httpapi.New(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL}, licenseManager, workspaces)
+	handler := httpapi.New(rulesets, engine, logger, httpapi.AuthConfig{Email: cfg.Auth.Email, Name: cfg.Auth.Name, Password: cfg.Auth.Password, SessionTTL: cfg.Auth.SessionTTL, SessionStorePath: filepath.Join(stateDir, "sessions.json"), JWTSigningKey: jwtSigningKey}, licenseManager, workspaces)
+	handler.SetAlertChannelRepository(alertChannelStore)
+	handler.SetNotificationRepository(notificationStore)
+	handler.SetInvocationLogRepository(invocationLogStore)
+	handler.SetProjectRepositories(projectStore, projectKeyStore)
 	server := &http.Server{Addr: ":" + cfg.Server.Port, Handler: handler.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	return &App{Config: cfg, Log: logger, Server: server}, nil
 }

@@ -1,6 +1,6 @@
 # 规则集与条件
 
-规则集包含基本信息和有序规则列表。规则可设置优先级、启用状态、条件和动作。求值按优先级从高到低执行，并返回匹配规则及其声明动作。
+规则集包含 ID、名称、版本、说明、启用状态和有序规则列表。规则可设置 ID、名称、优先级、启用状态、条件和声明动作。保存时服务端校验规则集/规则必填字段、规则 ID 唯一性、条件结构和操作符，并按优先级从高到低稳定排序。
 
 ## 条件组合
 
@@ -15,8 +15,8 @@
 }
 ```
 
-事实以 JSON 对象传入，点分路径用于读取嵌套字段。支持相等比较、数值比较、集合包含、字符串包含和空值检查等操作符。具体 API 模型以仓库中的 [OpenAPI 契约](https://github.com/bulolo/SnakeRule/blob/main/backend/server/docs/openapi.json)为准。
+事实以 JSON 对象传入，点分路径用于读取嵌套字段。支持 `equal`/`eq`、`notEqual`/`ne`、`greaterThan`/`gt`、`greaterThanInclusive`/`gte`、`lessThan`/`lt`、`lessThanInclusive`/`lte`、`in`、`notIn`、`contains`、`isNull` 和 `isNotNull`。`in`/`notIn` 的比较值须为数组；数值比较要求实际值和比较值可作为数字读取。具体 API 模型以仓库中的 [OpenAPI 契约](https://github.com/bulolo/SnakeRule/blob/main/backend/server/docs/openapi.json)为准。
 
 ## 当前范围
 
-规则集保存在内存中。动作作为决策结果返回，目前不会调用 Webhook 或执行外部操作。更多求值示例见[决策试运行](/engine/evaluation)。
+规则集和工作空间保存在进程内存中，API 重启后会清空并重新加载默认工作空间和演示规则。动作作为决策结果返回，目前不会调用 Webhook 或执行外部操作。更多求值示例见[决策试运行](/engine/evaluation)。

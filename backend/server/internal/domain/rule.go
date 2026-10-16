@@ -12,24 +12,41 @@ type Workspace struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type Project struct {
+	ID          string    `json:"id"`
+	Icon        string    `json:"icon,omitempty"`
+	Name        string    `json:"name"`
+	Slug        string    `json:"slug"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 // Ruleset is a versioned collection of rules evaluated as one decision.
 type Ruleset struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Version     string `json:"version"`
-	Description string `json:"description,omitempty"`
-	Enabled     bool   `json:"enabled"`
-	Rules       []Rule `json:"rules"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Version     string     `json:"version"`
+	Description string     `json:"description,omitempty"`
+	Enabled     bool       `json:"enabled"`
+	Alert       *RuleAlert `json:"alert,omitempty"`
+	Rules       []Rule     `json:"rules"`
 }
 
 type Rule struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Priority    int       `json:"priority"`
-	Enabled     bool      `json:"enabled"`
-	Conditions  Condition `json:"conditions"`
-	Actions     []Action  `json:"actions,omitempty"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	Priority    int        `json:"priority"`
+	Enabled     bool       `json:"enabled"`
+	Conditions  Condition  `json:"conditions"`
+	Actions     []Action   `json:"actions,omitempty"`
+	Alert       *RuleAlert `json:"alert,omitempty"`
+}
+
+type RuleAlert struct {
+	Enabled    bool     `json:"enabled"`
+	ChannelIDs []string `json:"channel_ids"`
 }
 
 // Condition supports a recursive JSON DSL: all, any, not, or a fact predicate.

@@ -67,15 +67,33 @@ func (s *Server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspaceContext := repo.WithWorkspace(r.Context(), id)
-	items, err := s.rulesets.List(workspaceContext)
+	projects, err := s.projects.List(workspaceContext)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	for _, item := range items {
-		if err := s.rulesets.Delete(workspaceContext, item.ID); err != nil {
+	for _, project := range projects {
+		projectContext := repo.WithProject(workspaceContext, project.ID)
+		items, err := s.rulesets.List(projectContext)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
+		}
+		for _, item := range items {
+			if err := s.rulesets.Delete(projectContext, item.ID); err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+		}
+		keys, _ := s.projectKeys.List(workspaceContext, project.ID)
+		for _, key := range keys {
+			_ = s.projectKeys.Delete(workspaceContext, project.ID, key.ID)
+		}
+		if project.ID != repo.DefaultProjectID {
+			if err := s.projects.Delete(workspaceContext, project.ID); err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
 		}
 	}
 	if err := s.workspaces.Delete(r.Context(), id); err != nil {

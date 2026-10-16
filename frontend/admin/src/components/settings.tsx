@@ -193,6 +193,7 @@ function WorkspaceSettings({
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [editingID, setEditingID] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
   const [confirmDeleteID, setConfirmDeleteID] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -213,6 +214,7 @@ function WorkspaceSettings({
       setDescription("");
       setEditingID("");
       await onRefresh();
+      setFormOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存工作空间失败");
     } finally {
@@ -225,6 +227,7 @@ function WorkspaceSettings({
     setSlug(item.slug ?? "");
     setDescription(item.description ?? "");
     setError("");
+    setFormOpen(true);
   }
   async function remove(item: Workspace) {
     setBusy(true);
@@ -248,17 +251,8 @@ function WorkspaceSettings({
           <p>为不同项目或团队隔离规则集，并在管理台快速切换。</p>
         </div>
       </div>
+      {formOpen && <section className="workspace-form-view"><header><div><small>WORKSPACE</small><h2>{editingID ? "编辑工作空间" : "新建工作空间"}</h2><p>{editingID ? "更新名称、slug 与说明" : "工作空间中的规则集互相隔离"}</p></div><button className="quiet" onClick={() => { setFormOpen(false); setEditingID(""); }}>← 返回列表</button></header>
       <form className="workspace-form" onSubmit={(event) => void save(event)}>
-        <div className="workspace-form-heading">
-          <div>
-            <b>{editingID ? "编辑工作空间" : "新建工作空间"}</b>
-            <small>
-              {editingID
-                ? "更新名称、slug 与说明"
-                : "工作空间中的规则集互相隔离"}
-            </small>
-          </div>
-        </div>
         <div className="workspace-form-fields">
           <label>
             名称
@@ -297,37 +291,24 @@ function WorkspaceSettings({
           </label>
         </div>
         <div className="workspace-form-actions">
-          {editingID && (
-            <button
-              type="button"
-              className="quiet"
-              disabled={busy}
-              onClick={() => {
-                setEditingID("");
-                setName("");
-                setSlug("");
-                setDescription("");
-              }}
-            >
-              取消
-            </button>
-          )}
           <button className="primary" disabled={busy}>
             {busy ? "正在保存…" : editingID ? "保存修改" : "创建工作空间"}
           </button>
         </div>
       </form>
+      </section>}
       {error && (
         <div className="login-error license-error" role="alert">
           {error}
         </div>
       )}
-      <section className="workspace-list-card">
+      {!formOpen && <section className="workspace-list-card">
         <header>
           <div>
             <b>工作空间</b>
             <small>{items.length} 个空间 · 默认空间不可删除</small>
           </div>
+          <button className="primary" onClick={() => { setName(""); setSlug(""); setDescription(""); setEditingID(""); setFormOpen(true); }}>＋ 新建工作空间</button>
         </header>
         {items.map((item) => (
           <article className="workspace-row" key={item.id}>
@@ -396,12 +377,114 @@ function WorkspaceSettings({
             )}
           </article>
         ))}
-      </section>
+      </section>}
       <p className="settings-readonly-note">
         当前开发版的工作空间与规则集保存在内存中，服务重启后会恢复为初始空间和演示规则。
       </p>
     </>
   );
+}
+
+type AlertChannel = {
+  id: string;
+  name: string;
+  type: "webhook" | "wecom" | "dingtalk" | "feishu" | "internal";
+  url: string;
+  enabled: boolean;
+  has_secret: boolean;
+};
+
+async function alertAPIJSON(response: Response): Promise<any> {
+  const raw = await response.text();
+  let body: any;
+  try { body = raw ? JSON.parse(raw) : {}; }
+  catch { throw new Error(`告警渠道接口返回非 JSON 响应（HTTP ${response.status}）：${raw.slice(0, 160)}`); }
+  if (!response.ok) throw new Error(body?.error?.message ?? `请求失败（HTTP ${response.status}）`);
+  return body;
+}
+
+function AlertChannelSettings({ onRefresh }: { onRefresh: () => Promise<void> }) {
+  const [items, setItems] = useState<AlertChannel[]>([]);
+  const [editing, setEditing] = useState("");
+  const [name, setName] = useState("");
+  const [url, setURL] = useState("");
+  const [secret, setSecret] = useState("");
+  const [channelType, setChannelType] = useState<AlertChannel["type"]>("webhook");
+  const [enabled, setEnabled] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState("");
+  const [notice, setNotice] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const refresh = useCallback(async () => {
+    const response = await fetch("/api/v1/system/alert-channels");
+    const body = await alertAPIJSON(response);
+    setItems(body.items ?? []);
+  }, []);
+  useEffect(() => { void refresh().catch((e: Error) => setError(e.message)); }, [refresh]);
+  function startEdit(item: AlertChannel) {
+    setEditing(item.id); setName(item.name); setURL(item.url); setSecret(""); setChannelType(item.type); setEnabled(item.enabled); setError(""); setFormOpen(true);
+  }
+  function reset() { setEditing(""); setName(""); setURL(""); setSecret(""); setChannelType("webhook"); setEnabled(true); setFormOpen(false); }
+  async function save(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError("");
+    try {
+      const response = await fetch(editing ? `/api/v1/system/alert-channels/${editing}` : "/api/v1/system/alert-channels", {
+        method: editing ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, type: channelType, url, secret, enabled }),
+      });
+      await alertAPIJSON(response);
+      reset(); await refresh(); await onRefresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "保存告警渠道失败"); }
+    finally { setBusy(false); }
+  }
+  async function remove(item: AlertChannel) {
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/v1/system/alert-channels/${item.id}`, { method: "DELETE" });
+      if (!response.ok) await alertAPIJSON(response);
+      setConfirmDelete(""); await refresh(); await onRefresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "删除告警渠道失败"); }
+    finally { setBusy(false); }
+  }
+  async function sendTest(item: AlertChannel) {
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/v1/system/alert-channels/${item.id}/test`, { method: "POST" });
+      await alertAPIJSON(response);
+      setNotice(`测试通知已发送到「${item.name}」。`);
+    } catch (e) { setError(e instanceof Error ? e.message : "测试通知发送失败"); }
+    finally { setBusy(false); }
+  }
+  return <>
+    <div className="settings-hero"><div><small>SYSTEM ALERTS</small><h2>告警渠道</h2><p>在系统设置中维护可供项目告警策略引用的消息渠道。</p></div></div>
+    {formOpen && <section className="workspace-form-view"><header><div><small>SYSTEM ALERTS</small><h2>{editing ? "编辑告警渠道" : "添加告警渠道"}</h2><p>选择机器人类型并配置 Webhook 地址。</p></div><button className="quiet" onClick={reset}>← 返回列表</button></header>
+    <form className="workspace-form" onSubmit={(event) => void save(event)}>
+      <div className="alert-channel-types" role="group" aria-label="告警渠道类型">
+        {([["webhook", "自定义 Webhook"], ["wecom", "企业微信"], ["dingtalk", "钉钉"], ["feishu", "飞书"]] as const).map(([id, label]) => <button key={id} type="button" className={channelType === id ? "active" : ""} onClick={() => setChannelType(id)}>{label}</button>)}
+      </div>
+      <div className="workspace-form-fields">
+        <label>渠道名称<input required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：订单风控通知" /></label>
+        <label>{channelType === "wecom" ? "机器人 Webhook 地址" : "Webhook 地址"}<input required type="url" value={url} onChange={(e) => setURL(e.target.value)} placeholder={channelType === "wecom" ? "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…" : channelType === "dingtalk" ? "https://oapi.dingtalk.com/robot/send?access_token=…" : channelType === "feishu" ? "https://open.feishu.cn/open-apis/bot/v2/hook/…" : "https://example.com/hooks/…"} /></label>
+        {channelType !== "wecom" && <label>{channelType === "dingtalk" ? "加签密钥（可选）" : channelType === "feishu" ? "签名密钥（可选）" : "Bearer 密钥（可选）"}<input type="password" autoComplete="new-password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={editing ? "留空表示保留现有密钥" : "输入机器人密钥"} /></label>}
+      </div>
+      <div className="workspace-form-actions">
+        <button type="button" className={enabled ? "secondary" : "quiet"} onClick={() => setEnabled(!enabled)}>{enabled ? "已启用" : "已停用"}</button>
+        <button className="primary" disabled={busy}>{busy ? "正在保存…" : editing ? "保存修改" : "添加渠道"}</button>
+      </div>
+    </form>
+    </section>}
+    {error && <div className="login-error license-error" role="alert">{error}</div>}
+    {notice && <div className="settings-readonly-note" role="status">{notice}</div>}
+    {!formOpen && <section className="workspace-list-card"><header><div><b>已配置渠道</b><small>{items.length} 个平台级渠道</small></div><button className="primary" onClick={() => { reset(); setFormOpen(true); }}>＋ 添加告警渠道</button></header>
+      {items.length === 0 && <p className="settings-readonly-note">还没有配置告警渠道。添加后，项目告警策略即可选择该渠道。</p>}
+      {items.map((item) => <article className="workspace-row" key={item.id}>
+        <span className="workspace-avatar">{item.type === "internal" ? "◉" : "↗"}</span><div className="workspace-row-info"><b>{item.name}<span className="workspace-current-pill">{item.enabled ? "启用" : "停用"}</span></b><small>{item.type === "internal" ? "规则命中后显示在工作台通知中心" : item.url}</small><code>{{webhook:"自定义 Webhook",wecom:"企业微信",dingtalk:"钉钉",feishu:"飞书",internal:"站内通知"}[item.type]}{item.type === "internal" ? " · 系统默认" : item.has_secret ? " · 密钥已保存" : " · 无密钥"}</code></div>
+        {item.type === "internal" ? <div className="workspace-row-actions"><span className="settings-readonly-note">不可删除</span></div> : confirmDelete === item.id ? <div className="workspace-confirm"><span>确认删除此渠道？</span><button className="quiet" disabled={busy} onClick={() => setConfirmDelete("")}>取消</button><button className="workspace-confirm-delete" disabled={busy} onClick={() => void remove(item)}>{busy ? "删除中…" : "确认删除"}</button></div> : <div className="workspace-row-actions"><button className="quiet" disabled={busy || !item.enabled} onClick={() => void sendTest(item)}>测试</button><button className="quiet" disabled={busy} onClick={() => startEdit(item)}>编辑</button><button className="quiet workspace-delete" disabled={busy} onClick={() => setConfirmDelete(item.id)}>删除</button></div>}
+      </article>)}
+    </section>}
+    {!formOpen && <p className="settings-readonly-note">密钥不会通过读取接口返回；编辑时留空可保留现有密钥。</p>}
+  </>;
 }
 
 export function SettingsDialog({
@@ -412,6 +495,7 @@ export function SettingsDialog({
   workspaces,
   activeWorkspaceID,
   onWorkspaceRefresh,
+  onAlertChannelRefresh,
 }: {
   area: "platform" | "system";
   onClose: () => void;
@@ -420,6 +504,7 @@ export function SettingsDialog({
   workspaces: Workspace[];
   activeWorkspaceID: string;
   onWorkspaceRefresh: () => Promise<void>;
+  onAlertChannelRefresh: () => Promise<void>;
 }) {
   const platform = area === "platform";
   const [tab, setTab] = useState(platform ? "overview" : "general");
@@ -432,6 +517,7 @@ export function SettingsDialog({
       ]
     : [
         { id: "general", label: "通用设置", group: "工作区" },
+        { id: "alerts", label: "告警渠道", group: "通知管理" },
         { id: "security", label: "安全设置", group: "账号安全" },
       ];
   const host = typeof window === "undefined" ? "—" : window.location.host;
@@ -648,6 +734,7 @@ export function SettingsDialog({
                 </div>
               </>
             )}
+            {!platform && tab === "alerts" && <AlertChannelSettings onRefresh={onAlertChannelRefresh} />}
             {!platform && tab === "security" && (
               <>
                 {heading(

@@ -54,6 +54,7 @@ export interface Rule {
   enabled: boolean;
   conditions: Condition;
   actions?: Action[];
+  alert?: RuleAlert;
 }
 
 export interface Ruleset {
@@ -62,6 +63,7 @@ export interface Ruleset {
   version: string;
   description?: string;
   enabled: boolean;
+  alert?: RuleAlert;
   rules: Rule[];
 }
 
@@ -87,6 +89,23 @@ export interface Decision {
   version: string;
   matched: boolean;
   hitRules: MatchedRule[];
+}
+
+export interface AlertChannel {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
+  enabled: boolean;
+  has_secret: boolean;
+}
+
+export interface AlertChannelInput {
+  name: string;
+  type: string;
+  url: string;
+  secret?: string;
+  enabled?: boolean;
 }
 
 export interface Workspace {
@@ -117,6 +136,92 @@ export interface ActiveWorkspaceResponse {
   active_workspace_id: string;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+  icon?: string;
+}
+
+export interface ProjectInput {
+  name: string;
+  slug?: string;
+  description?: string;
+  template?: string;
+  icon?: string;
+}
+
+export interface ProjectKey {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  type?: string;
+}
+
+export interface CreateProjectKeyInput {
+  name: string;
+  type?: string;
+}
+
+export interface ActiveProjectRequest {
+  project_id: string;
+}
+
+export interface ActiveProjectResponse {
+  active_project_id: string;
+}
+
+export interface RuleAlert {
+  enabled: boolean;
+  channel_ids: string[];
+}
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  project: string;
+  ruleset: string;
+  created_at: string;
+  read: boolean;
+}
+
+export interface InvocationLog {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+  ruleset_id?: string;
+  credential_type: string;
+  status_code: number;
+  matched: boolean;
+  hit_rules?: Record<string, JSONValue>[];
+  duration_ms: number;
+  created_at: string;
+  source: string;
+}
+
+export interface Pagination {
+  is_pager: number;
+  page: number;
+  size: number;
+  total: number;
+}
+
+export interface InvocationListResponse {
+  list: InvocationLog[];
+  pagination: Pagination;
+}
+
+export interface InvocationListQuery {
+  page?: number;
+  size?: number;
+  is_pager?: number;
+}
+
 export class SnakeRuleApiError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
 }
@@ -143,7 +248,8 @@ export const snakeRuleApi = {
   getRuleset: (id: string) => request<Ruleset>(`/api/v1/rulesets/${encodeURIComponent(id)}`),
   saveRuleset: (ruleset: Ruleset) => request<Ruleset>(`/api/v1/rulesets/${encodeURIComponent(ruleset.id)}`, { method: 'PUT', body: JSON.stringify(ruleset) }),
   deleteRuleset: (id: string) => request<void>(`/api/v1/rulesets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  evaluate: (input: EvaluateRequest) => request<Decision>('/api/v1/engine/evaluate', { method: 'POST', body: JSON.stringify(input) }),
+  evaluate: (input: EvaluateRequest, source?: 'designer') => request<Decision>('/api/v1/engine/evaluate', { method: 'POST', body: JSON.stringify(input), headers: source ? { 'X-SnakeRule-Source': source } : undefined }),
+  listProjectInvocations: (id: string, query: InvocationListQuery = {}) => { const params = new URLSearchParams(); for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value)); return request<InvocationListResponse>(`/api/v1/projects/${encodeURIComponent(id)}/invocations?${params.toString()}`); },
   getLicense: () => request<LicenseStatus>('/api/v1/platform/license'),
   uploadLicense: (file: File) => { const form = new FormData(); form.append('file', file); return request<LicenseStatus>('/api/v1/platform/license', { method: 'POST', body: form }); },
   clearLicense: () => request<LicenseStatus>('/api/v1/platform/license', { method: 'DELETE' }),
